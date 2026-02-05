@@ -1,8 +1,8 @@
 """
 Strands AI agent with Nevermined x402 payment-protected tools.
 
-This demo shows how to use the @requires_payment decorator to protect
-Strands agent tools with x402 payment verification and settlement.
+Uses the @requires_payment decorator to protect Strands agent tools
+with x402 payment verification and settlement.
 
 Usage:
     poetry run python agent.py
@@ -12,9 +12,10 @@ import os
 
 from dotenv import load_dotenv
 from strands import Agent, tool
+from strands.models.openai import OpenAIModel
 
 from payments_py import PaymentOptions, Payments
-from payments_py.x402.strands import PaymentContext, requires_payment
+from payments_py.x402.strands import requires_payment
 
 load_dotenv()
 
@@ -28,7 +29,7 @@ payments = Payments.get_instance(
 )
 
 
-@tool
+@tool(context=True)
 @requires_payment(
     payments=payments,
     plan_id=NVM_PLAN_ID,
@@ -41,11 +42,6 @@ def analyze_data(query: str, tool_context=None) -> dict:
     Args:
         query: The data analysis query to process.
     """
-    if tool_context:
-        ctx = tool_context.invocation_state.get("payment_context")
-        if ctx and isinstance(ctx, PaymentContext):
-            print(f"  Payment verified. Request ID: {ctx.agent_request_id}")
-
     return {
         "status": "success",
         "content": [
@@ -57,7 +53,7 @@ def analyze_data(query: str, tool_context=None) -> dict:
     }
 
 
-@tool
+@tool(context=True)
 @requires_payment(
     payments=payments,
     plan_id=NVM_PLAN_ID,
@@ -82,7 +78,13 @@ def premium_report(topic: str, depth: str = "standard", tool_context=None) -> di
     }
 
 
+model = OpenAIModel(
+    client_args={"api_key": os.environ["OPENAI_API_KEY"]},
+    model_id=os.getenv("MODEL_ID", "gpt-4o-mini"),
+)
+
 agent = Agent(
+    model=model,
     tools=[analyze_data, premium_report],
     system_prompt=(
         "You are a data analysis agent. You have two tools available:\n"

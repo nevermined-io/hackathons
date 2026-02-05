@@ -74,8 +74,21 @@ def main():
     print("Step 4: Calling agent with payment token...")
     print(f"  Prompt: {prompt}\n")
 
-    result = agent(prompt, payment_token=access_token)
+    state = {"payment_token": access_token}
+    result = agent(prompt, invocation_state=state)
     print(f"  Agent response: {result}")
+    print()
+
+    # Step 5: Check settlement result
+    settlement = state.get("payment_settlement")
+    if settlement:
+        print("Step 5: Payment settlement:")
+        print(f"  Success: {settlement.success}")
+        print(f"  Credits redeemed: {settlement.credits_redeemed}")
+        print(f"  Remaining balance: {settlement.remaining_balance}")
+        print(f"  Network: {settlement.network}")
+    else:
+        print("Step 5: No settlement found (tool may have returned an error)")
 
 
 if __name__ == "__main__":

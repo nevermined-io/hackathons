@@ -179,14 +179,15 @@ payments = Payments.get_instance(
     PaymentOptions(nvm_api_key=NVM_API_KEY, environment="sandbox")
 )
 
-@tool
+@tool(context=True)
 @requires_payment(payments=payments, plan_id=PLAN_ID, credits=1)
 def my_tool(query: str, tool_context=None) -> dict:
     """My payment-protected tool."""
     return {"status": "success", "content": [{"text": f"Result: {query}"}]}
 
 agent = Agent(tools=[my_tool])
-result = agent("Do something", payment_token="x402-access-token")
+state = {"payment_token": "x402-access-token"}
+result = agent("Do something", invocation_state=state)
 ```
 
 See `agents/strands-simple-agent/` for a complete working example.

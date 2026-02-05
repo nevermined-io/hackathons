@@ -58,7 +58,7 @@ payments = Payments.get_instance(
     PaymentOptions(nvm_api_key="nvm:...", environment="sandbox")
 )
 
-@tool
+@tool(context=True)
 @requires_payment(payments=payments, plan_id="your-plan-id", credits=1)
 def my_tool(query: str, tool_context=None) -> dict:
     """My payment-protected tool."""
@@ -74,7 +74,8 @@ payment_required = extract_payment_required(agent.messages)
 # payment_required["accepts"][0]["planId"] contains the plan to subscribe to
 
 # Then call with a valid token
-result = agent("Do something", payment_token="x402-access-token")
+state = {"payment_token": "x402-access-token"}
+result = agent("Do something", invocation_state=state)
 ```
 
 ## Tools
@@ -88,7 +89,7 @@ result = agent("Do something", payment_token="x402-access-token")
 
 The `@requires_payment` decorator wraps Strands `@tool` functions:
 
-- **Token source**: `tool_context.invocation_state["payment_token"]` (set via `agent("prompt", payment_token="...")`)
+- **Token source**: `tool_context.invocation_state["payment_token"]` (set via `agent("prompt", invocation_state={"payment_token": "..."})`)
 - **Verification**: Calls `payments.facilitator.verify_permissions()` before tool execution
 - **Settlement**: Calls `payments.facilitator.settle_permissions()` after successful execution
 - **Payment discovery**: Returns x402-compliant error with `PaymentRequired` when token is missing or invalid
