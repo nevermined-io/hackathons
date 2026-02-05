@@ -168,21 +168,28 @@ Example: `mcp://weather-mcp/tools/weather.today`
 
 ### Strands SDK + Nevermined
 
-Integrate Nevermined payments into Strands agents:
+Integrate Nevermined payments into Strands agents using the `@requires_payment` decorator:
 
 ```python
-from strands import Agent
-from payments_py import Payments
+from strands import Agent, tool
+from payments_py import Payments, PaymentOptions
+from payments_py.x402.strands import requires_payment
 
 payments = Payments.get_instance(
     PaymentOptions(nvm_api_key=NVM_API_KEY, environment="sandbox")
 )
 
-# Add Nevermined payment tools to your Strands agent
-agent = Agent(
-    tools=[...your_tools, payments_tool],
-)
+@tool
+@requires_payment(payments=payments, plan_id=PLAN_ID, credits=1)
+def my_tool(query: str, tool_context=None) -> dict:
+    """My payment-protected tool."""
+    return {"status": "success", "content": [{"text": f"Result: {query}"}]}
+
+agent = Agent(tools=[my_tool])
+result = agent("Do something", payment_token="x402-access-token")
 ```
+
+See `agents/strands-simple-agent/` for a complete working example.
 
 ### AgentCore Deployment
 
@@ -266,11 +273,22 @@ hackathons/
 │   ├── kit-g-requesting-agent/
 │   ├── kit-h-servicing-agent/
 │   └── kit-i-roi-governor/
+├── agents/                      # Independent agent projects
+│   └── strands-simple-agent/    # Strands + Nevermined x402 demo
 ├── aws-integration/
 │   ├── strands-nevermined/      # Strands SDK + Nevermined
 │   └── agentcore-deployment/    # AgentCore deploy scripts
 └── examples/                    # Complete working demos
 ```
+
+### Agents Directory
+
+Each subfolder under `agents/` is an independent agent project with its own `pyproject.toml` (poetry).
+
+- `strands-simple-agent/` - Strands agent with x402 payment-protected tools
+  - Install: `poetry install`
+  - Run agent: `poetry run python agent.py`
+  - Run demo: `poetry run python demo.py`
 
 ---
 

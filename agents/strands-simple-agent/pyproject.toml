@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "strands-simple-agent"
+version = "0.1.0"
+description = "Strands AI agent with Nevermined x402 payment protection"
+authors = []
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+strands-agents = ">=1.0.0"
+strands-agents-builder = ">=0.1.0"
+payments-py = {version = ">=1.0.3", extras = ["strands"]}
+python-dotenv = "^1.0.0"
+
+[tool.poetry.scripts]
+agent = "agent:main"
+demo = "demo:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

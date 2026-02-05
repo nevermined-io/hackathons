@@ -64,6 +64,14 @@ cp .env.example .env
 | **D** | [Publisher Agent](./starter-kits/kit-d-publisher-agent/) | Publishes content with tiered pricing | TS |
 | **E** | [Consuming Agent](./starter-kits/kit-e-consuming-agent/) | Discovers and consumes paid content | TS |
 
+## Demo Agents
+
+Complete working agents in the [`agents/`](./agents/) directory:
+
+| Agent | Description | Stack |
+|-------|-------------|-------|
+| [strands-simple-agent](./agents/strands-simple-agent/) | Strands AI agent with x402 payment-protected tools and full payment discovery flow | Python, Strands SDK, Nevermined |
+
 ## Protocol Overview
 
 ### x402 (HTTP Payment Protocol)
