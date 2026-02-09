@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "kit-b-selling-agent"
+version = "0.1.0"
+description = "Data Selling Agent - Hackathon Starter Kit B (Python)"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.10"
+strands-agents = {version = ">=1.0.0", extras = ["openai"]}
+payments-py = {version = ">=1.1.0", extras = ["strands", "fastapi"]}
+fastapi = "^0.120.0"
+uvicorn = "^0.31.0"
+httpx = "^0.28.0"
+openai = "^1.40.0"
+python-dotenv = "^1.0.0"
+
+[tool.poetry.extras]
+agentcore = ["bedrock-agentcore"]
+
+[tool.poetry.scripts]
+agent = "src.agent:main"
+agent-agentcore = "src.agent_agentcore:main"
+client = "src.client:main"
+demo = "src.demo:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

@@ -6,15 +6,57 @@ An agent that sells data or services with x402 payment protection.
 **Protocol:** x402
 **Languages:** TypeScript, Python
 
+## Architecture
+
+```
+                    ┌──────────────────────────────────┐
+                    │       Strands Agent Core          │
+                    │                                   │
+                    │  ┌────────────┐  ┌─────────────┐ │
+                    │  │search_data │  │summarize_data│ │
+                    │  │  (1 credit)│  │  (5 credits) │ │
+                    │  └────────────┘  └─────────────┘ │
+                    │         ┌──────────────┐         │
+                    │         │research_data │         │
+                    │         │ (10 credits) │         │
+                    │         └──────────────┘         │
+                    └──────────┬───────────┬───────────┘
+                               │           │
+                    ┌──────────▼──┐  ┌─────▼──────────┐
+                    │  FastAPI    │  │  AgentCore      │
+                    │  + OpenAI   │  │  + Bedrock      │
+                    │  (local)    │  │  (AWS)          │
+                    └─────────────┘  └────────────────┘
+```
+
 ## Features
 
 - Endpoint protection with x402 middleware
+- Three payment-protected tools with tiered pricing
+- Two deployment modes: local (FastAPI) and AWS (AgentCore)
 - Dynamic pricing based on request complexity
 - Usage analytics and revenue tracking
-- Rate limiting per subscriber
 - Automatic settlement
 
 ## Quick Start
+
+### Python
+
+```bash
+cd python
+poetry install
+cp .env.example .env
+# Edit .env with your credentials
+
+# Option 1: Run as FastAPI server (x402 protected HTTP endpoints)
+poetry run agent
+
+# Option 2: Run Strands agent directly (for testing tools)
+poetry run demo
+
+# Option 3: Test with client
+poetry run client
+```
 
 ### TypeScript
 
@@ -25,17 +67,6 @@ cp .env.example .env
 # Edit .env with your credentials
 yarn agent   # Start the selling agent
 yarn client  # Test with client
-```
-
-### Python
-
-```bash
-cd python
-poetry install
-cp .env.example .env
-# Edit .env with your credentials
-poetry run agent   # Start the selling agent
-poetry run client  # Test with client
 ```
 
 ## How It Works
@@ -68,6 +99,34 @@ poetry run client  # Test with client
      │<───────────────────────────────────────│
 ```
 
+## Tool Pricing
+
+| Tool | Credits | Description |
+|------|---------|-------------|
+| `search_data` | 1 | Quick data lookup — search for specific data points |
+| `summarize_data` | 5 | Summarize and analyze a dataset or topic |
+| `research_data` | 10 | Deep research — multi-source analysis with citations |
+
+## Deployment Modes
+
+### Local (FastAPI + OpenAI)
+
+Run the agent as a FastAPI server with x402 middleware for payment protection. Uses OpenAI for LLM inference.
+
+```bash
+poetry run agent   # Starts FastAPI on http://localhost:3000
+```
+
+### AWS (AgentCore + Bedrock)
+
+Deploy the same agent core to AWS AgentCore. Uses Amazon Bedrock for LLM inference.
+
+```bash
+poetry run agent-agentcore
+```
+
+Requires AWS credentials and Bedrock model access configured in `.env`.
+
 ## Configuration
 
 ### Environment Variables
@@ -80,6 +139,8 @@ NVM_PLAN_ID=your-plan-id
 OPENAI_API_KEY=sk-your-key
 
 # Optional
+NVM_AGENT_ID=your-agent-id
+MODEL_ID=gpt-4o-mini
 PORT=3000
 ```
 
@@ -145,9 +206,9 @@ Get pricing information.
 {
   "planId": "plan-xxx",
   "tiers": {
-    "simple": { "credits": 1, "description": "Basic query" },
-    "medium": { "credits": 5, "description": "Standard analysis" },
-    "complex": { "credits": 10, "description": "Deep analysis" }
+    "search_data": { "credits": 1, "description": "Quick data lookup" },
+    "summarize_data": { "credits": 5, "description": "Summarize and analyze" },
+    "research_data": { "credits": 10, "description": "Deep multi-source research" }
   }
 }
 ```
@@ -168,7 +229,23 @@ Get usage statistics (for seller).
 
 ## Dynamic Pricing
 
-The kit supports dynamic pricing based on request parameters:
+**Python (Strands decorator):**
+
+```python
+@tool(context=True)
+@requires_payment(payments=payments, plan_id=PLAN_ID, credits=1)
+def search_data(query: str, tool_context=None) -> dict:
+    """Quick data lookup (1 credit)."""
+    return {"status": "success", "content": [{"text": f"Results for: {query}"}]}
+
+@tool(context=True)
+@requires_payment(payments=payments, plan_id=PLAN_ID, credits=10)
+def research_data(query: str, tool_context=None) -> dict:
+    """Deep research with citations (10 credits)."""
+    return {"status": "success", "content": [{"text": f"Research report: {query}"}]}
+```
+
+**TypeScript (Express middleware):**
 
 ```typescript
 app.use(paymentMiddleware(payments, {
@@ -188,11 +265,13 @@ app.use(paymentMiddleware(payments, {
 
 ## Customization Ideas
 
-1. **Tiered access** - Different data quality at different prices
-2. **Subscription discounts** - Lower per-credit cost for frequent users
-3. **Data freshness pricing** - Real-time data costs more
-4. **Volume discounts** - Reduce price for bulk queries
-5. **Geographic pricing** - Different rates by region
+1. **Swap data sources** — Integrate Exa, Tavily, Apify, or your own APIs
+2. **Add domain-specific tools** — Financial data, weather, legal documents, etc.
+3. **Dynamic pricing** — Adjust credits based on data freshness, volume, or complexity
+4. **Tiered access** — Different data quality at different price points
+5. **Subscription discounts** — Lower per-credit cost for frequent users
+6. **Data freshness pricing** — Real-time data costs more than historical
+7. **Volume discounts** — Reduce price for bulk queries
 
 ## Next Steps
 
@@ -200,6 +279,7 @@ app.use(paymentMiddleware(payments, {
 - Implement custom pricing logic
 - Add data quality guarantees
 - Set up revenue analytics
+- Deploy to AWS AgentCore for production
 - Test with Kit A (Buyer Agent)
 
 ## Related
