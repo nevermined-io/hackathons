@@ -27,7 +27,6 @@ load_dotenv()
 import httpx
 
 from payments_py import Payments, PaymentOptions
-from payments_py.x402.fastapi import X402_HEADERS
 
 # Configuration
 SERVER_URL = os.getenv("SERVER_URL", "http://localhost:3000")
@@ -82,7 +81,7 @@ def main():
         response1 = client.post(
             f"{SERVER_URL}/data",
             headers={"Content-Type": "application/json"},
-            json={"query": "AI agent market trends 2025", "complexity": "simple"},
+            json={"query": "AI agent market trends 2025"},
         )
 
         print(f"\nPOST /data -> {response1.status_code} {response1.reason_phrase}")
@@ -96,14 +95,10 @@ def main():
         print("STEP 3: Decode payment requirements from header")
         print("=" * 60)
 
-        payment_required_header = response1.headers.get(
-            X402_HEADERS["PAYMENT_REQUIRED"]
-        )
+        payment_required_header = response1.headers.get("payment-required")
 
         if not payment_required_header:
-            print(
-                f"Missing '{X402_HEADERS['PAYMENT_REQUIRED']}' header in 402 response"
-            )
+            print("Missing 'payment-required' header in 402 response")
             sys.exit(1)
 
         payment_required = decode_base64_json(payment_required_header)
@@ -127,15 +122,15 @@ def main():
         print("STEP 5: Request with payment token")
         print("=" * 60)
 
-        print(f"\nSending POST /data with '{X402_HEADERS['PAYMENT_SIGNATURE']}' header...")
+        print("\nSending POST /data with 'payment-signature' header...")
 
         response2 = client.post(
             f"{SERVER_URL}/data",
             headers={
                 "Content-Type": "application/json",
-                X402_HEADERS["PAYMENT_SIGNATURE"]: access_token,
+                "payment-signature": access_token,
             },
-            json={"query": "AI agent market trends 2025", "complexity": "simple"},
+            json={"query": "AI agent market trends 2025"},
         )
 
         print(f"\nPOST /data -> {response2.status_code} {response2.reason_phrase}")
@@ -147,18 +142,6 @@ def main():
 
         print("\nResponse body:")
         print(pretty_json(response2.json()))
-
-        # Check settlement header
-        payment_response_header = response2.headers.get(
-            X402_HEADERS["PAYMENT_RESPONSE"]
-        )
-        if payment_response_header:
-            try:
-                settlement = decode_base64_json(payment_response_header)
-                print("\nSettlement response:")
-                print(pretty_json(settlement))
-            except Exception:
-                print(f"\nSettlement header: {payment_response_header[:80]}...")
 
         # Step 6: Check analytics
         print("\n" + "=" * 60)

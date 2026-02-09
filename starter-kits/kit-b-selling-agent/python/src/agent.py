@@ -1,12 +1,15 @@
 """
 FastAPI server wrapping the Strands agent for local development.
 
-Provides HTTP endpoints with x402 payment middleware. Uses OpenAI model.
+Thin HTTP wrapper around the Strands agent. Payment protection is handled
+entirely by @requires_payment on the tools — no FastAPI middleware needed.
 
 Usage:
     poetry run agent
 """
 
+import base64
+import json
 import os
 import sys
 
@@ -20,11 +23,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from strands.models.openai import OpenAIModel
 
-from payments_py.x402.fastapi import PaymentMiddleware, X402_HEADERS
+from payments_py.x402.strands import extract_payment_required
 
-from .agent_core import payments, create_agent, NVM_PLAN_ID
+from .agent_core import create_agent, NVM_PLAN_ID
 from .analytics import analytics
-from .pricing import PRICING_TIERS, get_credits_for_complexity
+from .pricing import PRICING_TIERS
 
 # Configuration
 PORT = int(os.getenv("PORT", "3000"))
@@ -50,40 +53,45 @@ app = FastAPI(
 
 class DataRequest(BaseModel):
     query: str
-    complexity: str = "simple"
-
-
-# Add payment middleware - protects POST /data with dynamic credits
-app.add_middleware(
-    PaymentMiddleware,
-    payments=payments,
-    routes={
-        "POST /data": {
-            "plan_id": NVM_PLAN_ID,
-            "credits": 1,  # Base cost; actual tool cost is handled by @requires_payment
-        },
-    },
-)
 
 
 @app.post("/data")
 async def data(request: Request, body: DataRequest) -> JSONResponse:
-    """Query data through the Strands agent (protected by payment middleware)."""
-    try:
-        # Get payment token from middleware (already verified)
-        payment_token = request.headers.get(X402_HEADERS["PAYMENT_SIGNATURE"], "")
+    """Query data through the Strands agent.
 
-        # Run the agent with the payment token
+    Payment is handled by @requires_payment on each tool. If no valid
+    token is provided, the tool returns a PaymentRequired error which
+    we translate into an HTTP 402 response with the standard headers.
+    """
+    try:
+        # Pass payment token from HTTP header to the Strands agent
+        payment_token = request.headers.get("payment-signature", "")
         state = {"payment_token": payment_token} if payment_token else {}
+
         result = agent(body.query, invocation_state=state)
 
-        # Record analytics
-        credits = get_credits_for_complexity(body.complexity)
-        analytics.record_request(body.complexity, credits)
+        # Check if payment was required but not fulfilled
+        payment_required = extract_payment_required(agent.messages)
+        if payment_required and not state.get("payment_settlement"):
+            encoded = base64.b64encode(
+                json.dumps(payment_required).encode()
+            ).decode()
+            return JSONResponse(
+                status_code=402,
+                content={
+                    "error": "Payment Required",
+                    "message": str(result),
+                },
+                headers={"payment-required": encoded},
+            )
+
+        # Success — record analytics
+        settlement = state.get("payment_settlement")
+        credits = settlement.credits_redeemed if settlement else 0
+        analytics.record_request("request", credits)
 
         return JSONResponse(content={
             "response": str(result),
-            "complexity": body.complexity,
             "credits_used": credits,
         })
 
@@ -119,16 +127,13 @@ async def health() -> JSONResponse:
 def main():
     """Run the FastAPI server."""
     print(f"Data Selling Agent running on http://localhost:{PORT}")
-    print(f"\nPayment protection enabled for POST /data")
+    print(f"\nPayment protection via @requires_payment on Strands tools")
     print(f"Plan ID: {NVM_PLAN_ID}")
     print(f"\nEndpoints:")
-    print(f"  POST /data     - Query data (protected, requires x402 token)")
+    print(f"  POST /data     - Query data (send x402 token in 'payment-signature' header)")
     print(f"  GET  /pricing  - View pricing tiers")
     print(f"  GET  /stats    - View usage analytics")
     print(f"  GET  /health   - Health check")
-    print(
-        f"\nSend x402 token in '{X402_HEADERS['PAYMENT_SIGNATURE']}' header."
-    )
 
     uvicorn.run(app, host="0.0.0.0", port=PORT)
 

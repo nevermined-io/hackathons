@@ -31,12 +31,12 @@ An agent that sells data or services with x402 payment protection.
 
 ## Features
 
-- Endpoint protection with x402 middleware
-- Three payment-protected tools with tiered pricing
+- Payment-protected tools via `@requires_payment` decorator (Strands + Nevermined)
+- Three tools with tiered pricing (1, 5, 10 credits)
 - Two deployment modes: local (FastAPI) and AWS (AgentCore)
-- Dynamic pricing based on request complexity
+- LLM-driven tool routing — the agent picks the right tool for the query
 - Usage analytics and revenue tracking
-- Automatic settlement
+- Automatic verification and settlement per tool call
 
 ## Quick Start
 
@@ -111,7 +111,7 @@ yarn client  # Test with client
 
 ### Local (FastAPI + OpenAI)
 
-Run the agent as a FastAPI server with x402 middleware for payment protection. Uses OpenAI for LLM inference.
+Run the agent as a FastAPI server. Payment protection is handled by `@requires_payment` on each Strands tool — the server is just a thin HTTP wrapper. Uses OpenAI for LLM inference.
 
 ```bash
 poetry run agent   # Starts FastAPI on http://localhost:3000
@@ -169,8 +169,7 @@ payment-signature: <x402-access-token>
 **Request Body:**
 ```json
 {
-  "query": "market data for AAPL",
-  "complexity": "medium"
+  "query": "market data for AAPL"
 }
 ```
 
