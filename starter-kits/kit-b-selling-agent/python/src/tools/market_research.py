@@ -47,17 +47,17 @@ def research_market_impl(query: str, depth: str = "standard") -> dict:
                 "sources": [],
             }
 
-        # Collect source URLs
-        for r in raw_results:
-            if r.get("url"):
-                sources.append({"title": r.get("title", ""), "url": r["url"]})
+        sources = [
+            {"title": r.get("title", ""), "url": r["url"]}
+            for r in raw_results
+            if r.get("url")
+        ]
 
         # Step 2: Gather content
         content_pieces = [r.get("snippet", "") for r in raw_results if r.get("snippet")]
 
-        # For deep research, also fetch content from top URLs
         if depth == "deep":
-            for r in raw_results[:3]:  # Fetch top 3 URLs
+            for r in raw_results[:3]:
                 url = r.get("url", "")
                 if url:
                     fetched = _fetch_url_content(url)
@@ -104,7 +104,7 @@ def research_market_impl(query: str, depth: str = "standard") -> dict:
     except Exception as e:
         return {
             "status": "error",
-            "content": [{"text": f"Research failed: {str(e)}"}],
+            "content": [{"text": f"Research failed: {e}"}],
             "report": "",
             "sources": sources,
         }

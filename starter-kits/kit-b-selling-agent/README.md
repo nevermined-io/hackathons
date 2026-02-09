@@ -150,7 +150,7 @@ PORT=3000
 2. Navigate to "My Pricing Plans"
 3. Create a new plan with:
    - Plan type: Credit-based
-   - Endpoints: `POST /data`, `GET /data/:id`
+   - Endpoints: `POST /data`
    - Price per credit: Set your rate
 4. Copy the Plan ID to your `.env`
 
@@ -176,15 +176,8 @@ payment-signature: <x402-access-token>
 **Response (200):**
 ```json
 {
-  "data": {
-    "symbol": "AAPL",
-    "price": 178.50,
-    "volume": 52000000
-  },
-  "metadata": {
-    "timestamp": "2024-03-05T10:30:00Z",
-    "source": "market-feed"
-  }
+  "response": "Found 5 results for 'market data for AAPL'...",
+  "credits_used": 1
 }
 ```
 
@@ -205,9 +198,9 @@ Get pricing information.
 {
   "planId": "plan-xxx",
   "tiers": {
-    "search_data": { "credits": 1, "description": "Quick data lookup" },
-    "summarize_data": { "credits": 5, "description": "Summarize and analyze" },
-    "research_data": { "credits": 10, "description": "Deep multi-source research" }
+    "simple": { "credits": 1, "description": "Basic web search - returns raw search results", "tool": "search_data" },
+    "medium": { "credits": 5, "description": "Content summarization - LLM-powered analysis", "tool": "summarize_data" },
+    "complex": { "credits": 10, "description": "Full market research - multi-source report", "tool": "research_data" }
   }
 }
 ```

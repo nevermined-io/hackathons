@@ -22,14 +22,13 @@ load_dotenv()
 from strands.models.openai import OpenAIModel
 from payments_py.x402.strands import extract_payment_required
 
-from .strands_agent import payments, create_agent
+from .strands_agent import create_agent, payments
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 if not OPENAI_API_KEY:
     print("OPENAI_API_KEY is required. Set it in .env file.")
     sys.exit(1)
 
-# Create agent with OpenAI model
 model = OpenAIModel(
     client_args={"api_key": OPENAI_API_KEY},
     model_id=os.getenv("MODEL_ID", "gpt-4o-mini"),

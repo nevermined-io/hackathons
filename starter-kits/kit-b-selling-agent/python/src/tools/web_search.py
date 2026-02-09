@@ -43,21 +43,24 @@ def search_web(query: str, max_results: int = 5) -> dict:
                 "snippet": abstract,
             })
 
-        summary = f"Found {len(results)} results for '{query}'"
-        if not results:
-            summary = f"No results found for '{query}'. Try a different search term."
+        if results:
+            summary = f"Found {len(results)} results for '{query}'"
+            details = "\n".join(
+                f"- {r['title']}: {r['snippet'][:200]}" for r in results
+            )
+            text = f"{summary}\n\n{details}"
+        else:
+            text = f"No results found for '{query}'. Try a different search term."
 
         return {
             "status": "success",
-            "content": [{"text": summary + "\n\n" + "\n".join(
-                f"- {r['title']}: {r['snippet'][:200]}" for r in results
-            )}],
+            "content": [{"text": text}],
             "results": results,
         }
 
     except Exception as e:
         return {
             "status": "error",
-            "content": [{"text": f"Search failed: {str(e)}"}],
+            "content": [{"text": f"Search failed: {e}"}],
             "results": [],
         }

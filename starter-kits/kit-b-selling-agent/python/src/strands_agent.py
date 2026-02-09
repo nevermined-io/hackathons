@@ -14,22 +14,20 @@ import os
 from dotenv import load_dotenv
 from strands import Agent, tool
 
-from payments_py import PaymentOptions, Payments
+from payments_py import Payments, PaymentOptions
 from payments_py.x402.strands import requires_payment
 
-from .tools.web_search import search_web
-from .tools.summarize import summarize_content_impl
 from .tools.market_research import research_market_impl
+from .tools.summarize import summarize_content_impl
+from .tools.web_search import search_web
 
 load_dotenv()
 
-# Nevermined configuration
 NVM_API_KEY = os.environ["NVM_API_KEY"]
 NVM_ENVIRONMENT = os.getenv("NVM_ENVIRONMENT", "sandbox")
 NVM_PLAN_ID = os.environ["NVM_PLAN_ID"]
 NVM_AGENT_ID = os.getenv("NVM_AGENT_ID")
 
-# Initialize Nevermined Payments SDK
 payments = Payments.get_instance(
     PaymentOptions(nvm_api_key=NVM_API_KEY, environment=NVM_ENVIRONMENT)
 )

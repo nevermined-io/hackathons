@@ -28,7 +28,6 @@ import httpx
 
 from payments_py import Payments, PaymentOptions
 
-# Configuration
 SERVER_URL = os.getenv("SERVER_URL", "http://localhost:3000")
 NVM_API_KEY = os.getenv("NVM_API_KEY", "")
 NVM_ENVIRONMENT = os.getenv("NVM_ENVIRONMENT", "sandbox")
@@ -38,7 +37,6 @@ if not NVM_API_KEY or not NVM_PLAN_ID:
     print("NVM_API_KEY and NVM_PLAN_ID are required.")
     sys.exit(1)
 
-# Initialize Nevermined Payments SDK
 payments = Payments.get_instance(
     PaymentOptions(nvm_api_key=NVM_API_KEY, environment=NVM_ENVIRONMENT)
 )

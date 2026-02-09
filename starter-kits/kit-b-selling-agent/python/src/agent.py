@@ -25,11 +25,10 @@ from strands.models.openai import OpenAIModel
 
 from payments_py.x402.strands import extract_payment_required
 
-from .strands_agent import create_agent, NVM_PLAN_ID
 from .analytics import analytics
 from .pricing import PRICING_TIERS
+from .strands_agent import NVM_PLAN_ID, create_agent
 
-# Configuration
 PORT = int(os.getenv("PORT", "3000"))
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
@@ -37,14 +36,12 @@ if not OPENAI_API_KEY:
     print("OPENAI_API_KEY is required. Set it in .env file.")
     sys.exit(1)
 
-# Create Strands agent with OpenAI model
 model = OpenAIModel(
     client_args={"api_key": OPENAI_API_KEY},
     model_id=os.getenv("MODEL_ID", "gpt-4o-mini"),
 )
 agent = create_agent(model)
 
-# Create FastAPI app
 app = FastAPI(
     title="Kit B - Data Selling Agent (Python)",
     description="Strands AI agent with x402 payment-protected data tools",
@@ -64,7 +61,6 @@ async def data(request: Request, body: DataRequest) -> JSONResponse:
     we translate into an HTTP 402 response with the standard headers.
     """
     try:
-        # Pass payment token from HTTP header to the Strands agent
         payment_token = request.headers.get("payment-signature", "")
         state = {"payment_token": payment_token} if payment_token else {}
 
@@ -127,13 +123,13 @@ async def health() -> JSONResponse:
 def main():
     """Run the FastAPI server."""
     print(f"Data Selling Agent running on http://localhost:{PORT}")
-    print(f"\nPayment protection via @requires_payment on Strands tools")
+    print("\nPayment protection via @requires_payment on Strands tools")
     print(f"Plan ID: {NVM_PLAN_ID}")
-    print(f"\nEndpoints:")
-    print(f"  POST /data     - Query data (send x402 token in 'payment-signature' header)")
-    print(f"  GET  /pricing  - View pricing tiers")
-    print(f"  GET  /stats    - View usage analytics")
-    print(f"  GET  /health   - Health check")
+    print("\nEndpoints:")
+    print("  POST /data     - Query data (send x402 token in 'payment-signature' header)")
+    print("  GET  /pricing  - View pricing tiers")
+    print("  GET  /stats    - View usage analytics")
+    print("  GET  /health   - Health check")
 
     uvicorn.run(app, host="0.0.0.0", port=PORT)
 

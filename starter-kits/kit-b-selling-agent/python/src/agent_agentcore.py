@@ -21,14 +21,12 @@ from strands.models.bedrock import BedrockModel
 
 from .strands_agent import create_agent
 
-# Create Strands agent with Bedrock model
 model = BedrockModel(
     model_id=os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-sonnet-20241022-v2:0"),
     region_name=os.getenv("AWS_REGION", "us-west-2"),
 )
 agent = create_agent(model)
 
-# Create AgentCore app
 app = BedrockAgentCoreApp()
 
 

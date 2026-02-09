@@ -74,7 +74,7 @@ def summarize_content_impl(content: str, focus: str = "key_findings") -> dict:
     except Exception as e:
         return {
             "status": "error",
-            "content": [{"text": f"Summarization failed: {str(e)}"}],
+            "content": [{"text": f"Summarization failed: {e}"}],
             "summary": "",
             "key_points": [],
         }
