@@ -22,7 +22,7 @@ load_dotenv()
 from strands.models.openai import OpenAIModel
 from payments_py.x402.strands import extract_payment_required
 
-from .agent_core import payments, create_agent
+from .strands_agent import payments, create_agent
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 if not OPENAI_API_KEY:

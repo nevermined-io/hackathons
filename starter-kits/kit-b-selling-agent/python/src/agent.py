@@ -25,7 +25,7 @@ from strands.models.openai import OpenAIModel
 
 from payments_py.x402.strands import extract_payment_required
 
-from .agent_core import create_agent, NVM_PLAN_ID
+from .strands_agent import create_agent, NVM_PLAN_ID
 from .analytics import analytics
 from .pricing import PRICING_TIERS
 

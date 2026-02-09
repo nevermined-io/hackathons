@@ -19,7 +19,7 @@ load_dotenv()
 from bedrock_agentcore import BedrockAgentCoreApp
 from strands.models.bedrock import BedrockModel
 
-from .agent_core import create_agent
+from .strands_agent import create_agent
 
 # Create Strands agent with Bedrock model
 model = BedrockModel(

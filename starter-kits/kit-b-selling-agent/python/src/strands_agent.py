@@ -6,7 +6,7 @@ This is the heart of the kit. Both agent.py (FastAPI) and agent_agentcore.py
 wrapped with @tool + @requires_payment decorators.
 
 Usage:
-    from src.agent_core import payments, create_agent, NVM_PLAN_ID
+    from src.strands_agent import payments, create_agent, NVM_PLAN_ID
 """
 
 import os
