@@ -154,6 +154,10 @@ Get purchase history.
 - Implement quality assessment
 - Connect with Kit B (Selling Agent) for testing
 
+## Working Implementation
+
+See [`../../agents/buyer-simple-agent/`](../../agents/buyer-simple-agent/) for a complete working implementation with Strands SDK, x402 payment flow, and budget management.
+
 ## Related
 
 - [Kit B: Selling Agent](../kit-b-selling-agent/) - Build the seller side
