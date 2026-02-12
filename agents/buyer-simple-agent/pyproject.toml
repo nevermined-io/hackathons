@@ -7,7 +7,7 @@ package-mode = false
 [tool.poetry.dependencies]
 python = "^3.10"
 strands-agents = {version = ">=1.0.0", extras = ["openai"]}
-payments-py = ">=1.1.0"
+payments-py = {version = ">=1.1.0", extras = ["a2a"]}
 httpx = "^0.28.0"
 openai = "^1.40.0"
 python-dotenv = "^1.0.0"
@@ -20,6 +20,7 @@ agent = "src.agent:main"
 agent-agentcore = "src.agent_agentcore:main"
 client = "src.client:main"
 demo = "src.demo:main"
+client-a2a = "src.client_a2a:main"
 
 [build-system]
 requires = ["poetry-core"]

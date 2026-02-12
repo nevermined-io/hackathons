@@ -1,0 +1,102 @@
+"""Discover a seller via A2A agent card — fetch /.well-known/agent.json."""
+
+import httpx
+
+
+def discover_agent_impl(agent_url: str) -> dict:
+    """Fetch an A2A agent card and parse payment extension.
+
+    Args:
+        agent_url: Base URL of the A2A agent (e.g. http://localhost:9000).
+
+    Returns:
+        dict with status, content (for Strands), and parsed agent card info.
+    """
+    url = agent_url.rstrip("/")
+    card_url = f"{url}/.well-known/agent.json"
+
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            response = client.get(card_url)
+
+        if response.status_code != 200:
+            return {
+                "status": "error",
+                "content": [{"text": (
+                    f"Failed to fetch agent card from {card_url}: "
+                    f"HTTP {response.status_code}"
+                )}],
+            }
+
+        card = response.json()
+
+        # Extract basic info
+        name = card.get("name", "Unknown Agent")
+        description = card.get("description", "No description")
+        version = card.get("version", "unknown")
+        skills = card.get("skills", [])
+
+        # Extract payment extension
+        payment_ext = None
+        extensions = card.get("capabilities", {}).get("extensions", [])
+        for ext in extensions:
+            if ext.get("uri") == "urn:nevermined:payment":
+                payment_ext = ext.get("params", {})
+                break
+
+        # Build readable output
+        lines = [
+            f"Agent: {name}",
+            f"Description: {description}",
+            f"Version: {version}",
+            f"URL: {url}",
+            "",
+            "Skills:",
+        ]
+        for skill in skills:
+            skill_name = skill.get("name", skill.get("id", "unknown"))
+            skill_desc = skill.get("description", "")
+            lines.append(f"  - {skill_name}: {skill_desc}")
+
+        if payment_ext:
+            plan_id = payment_ext.get("planId", "")
+            agent_id = payment_ext.get("agentId", "")
+            credits = payment_ext.get("credits", 0)
+            payment_type = payment_ext.get("paymentType", "unknown")
+            cost_desc = payment_ext.get("costDescription", "")
+
+            lines.extend([
+                "",
+                "Payment:",
+                f"  Plan ID: {plan_id}",
+                f"  Agent ID: {agent_id}",
+                f"  Min credits: {credits}",
+                f"  Payment type: {payment_type}",
+                f"  Cost info: {cost_desc}",
+            ])
+        else:
+            lines.extend(["", "Payment: No payment extension found (free agent)"])
+
+        result = {
+            "status": "success",
+            "content": [{"text": "\n".join(lines)}],
+            "name": name,
+            "description": description,
+            "skills": skills,
+        }
+
+        if payment_ext:
+            result["payment"] = payment_ext
+
+        return result
+
+    except httpx.ConnectError:
+        return {
+            "status": "error",
+            "content": [{"text": f"Cannot connect to agent at {card_url}. Is it running?"}],
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "content": [{"text": f"Failed to discover agent: {e}"}],
+        }

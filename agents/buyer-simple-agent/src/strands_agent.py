@@ -20,6 +20,8 @@ from .budget import Budget
 from .tools.discover import discover_pricing_impl
 from .tools.balance import check_balance_impl
 from .tools.purchase import purchase_data_impl
+from .tools.discover_a2a import discover_agent_impl
+from .tools.purchase_a2a import purchase_a2a_impl
 
 load_dotenv()
 
@@ -28,6 +30,7 @@ NVM_ENVIRONMENT = os.getenv("NVM_ENVIRONMENT", "sandbox")
 NVM_PLAN_ID = os.environ["NVM_PLAN_ID"]
 NVM_AGENT_ID = os.getenv("NVM_AGENT_ID")
 SELLER_URL = os.getenv("SELLER_URL", "http://localhost:3000")
+SELLER_A2A_URL = os.getenv("SELLER_A2A_URL", "http://localhost:9000")
 
 MAX_DAILY_SPEND = int(os.getenv("MAX_DAILY_SPEND", "0"))
 MAX_PER_REQUEST = int(os.getenv("MAX_PER_REQUEST", "0"))
@@ -119,28 +122,113 @@ def purchase_data(query: str, seller_url: str = "") -> dict:
 
 
 # ---------------------------------------------------------------------------
+# A2A buyer tools
+# ---------------------------------------------------------------------------
+
+@tool
+def discover_agent(agent_url: str = "") -> dict:
+    """Discover a seller via A2A protocol by fetching its agent card.
+
+    Retrieves /.well-known/agent.json from the seller and parses
+    the payment extension to find plan ID, agent ID, and pricing.
+
+    Args:
+        agent_url: Base URL of the A2A agent (defaults to SELLER_A2A_URL env var).
+    """
+    url = agent_url or SELLER_A2A_URL
+    return discover_agent_impl(url)
+
+
+@tool
+def purchase_a2a(query: str, agent_url: str = "") -> dict:
+    """Purchase data from a seller using the A2A protocol.
+
+    Sends an A2A message with automatic x402 payment via PaymentsClient.
+    The agent card's payment extension provides the plan ID and agent ID.
+
+    Args:
+        query: The data query to send to the seller.
+        agent_url: Base URL of the A2A agent (defaults to SELLER_A2A_URL env var).
+    """
+    url = agent_url or SELLER_A2A_URL
+
+    # First discover the agent to get payment info
+    discovery = discover_agent_impl(url)
+    if discovery.get("status") != "success":
+        return {
+            "status": "error",
+            "content": [{"text": f"Cannot discover agent at {url}. Is it running?"}],
+            "credits_used": 0,
+        }
+
+    payment = discovery.get("payment", {})
+    plan_id = payment.get("planId", NVM_PLAN_ID)
+    agent_id = payment.get("agentId", NVM_AGENT_ID or "")
+
+    if not plan_id:
+        return {
+            "status": "error",
+            "content": [{"text": "No plan ID found in agent card or environment."}],
+            "credits_used": 0,
+        }
+
+    # Budget pre-check
+    min_credits = payment.get("credits", 1)
+    allowed, reason = budget.can_spend(min_credits)
+    if not allowed:
+        return {
+            "status": "budget_exceeded",
+            "content": [{"text": f"Budget check failed: {reason}"}],
+            "credits_used": 0,
+        }
+
+    result = purchase_a2a_impl(
+        payments=payments,
+        plan_id=plan_id,
+        agent_url=url,
+        agent_id=agent_id,
+        query=query,
+    )
+
+    credits_used = result.get("credits_used", 0)
+    if result.get("status") == "success" and credits_used > 0:
+        budget.record_purchase(credits_used, url, query)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Agent factory
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """\
 You are a data buying agent. You help users discover and purchase data from \
-sellers using the Nevermined x402 payment protocol.
+sellers using the Nevermined payment protocols.
 
-Your workflow:
-1. **discover_pricing** — Call this first to see what the seller offers and \
-the cost of each tier.
+You support two modes:
+
+**HTTP mode (x402):**
+1. **discover_pricing** — Call this first to see what the seller offers via HTTP.
 2. **check_balance** — Check your credit balance and budget before purchasing.
-3. **purchase_data** — Buy data by sending a query to the seller.
+3. **purchase_data** — Buy data by sending an x402-protected HTTP request.
+
+**A2A mode (Agent-to-Agent protocol):**
+1. **discover_agent** — Fetch the seller's agent card (/.well-known/agent.json) \
+to see skills and payment requirements.
+2. **check_balance** — Check your credit balance and budget.
+3. **purchase_a2a** — Send an A2A message with automatic payment.
 
 Important guidelines:
-- Always discover pricing first so you can inform the user about costs.
+- Always discover the seller first so you can inform the user about costs.
 - Always check the balance before making a purchase.
 - Tell the user the expected cost BEFORE purchasing and confirm they want to proceed.
 - After a purchase, report what was received and the credits spent.
 - If budget limits are exceeded, explain the situation and suggest alternatives.
+- Use A2A tools (discover_agent, purchase_a2a) when the seller runs in A2A mode.
+- Use HTTP tools (discover_pricing, purchase_data) when the seller runs in HTTP mode.
 - You can purchase from different sellers by providing their URL."""
 
-TOOLS = [discover_pricing, check_balance, purchase_data]
+TOOLS = [discover_pricing, check_balance, purchase_data, discover_agent, purchase_a2a]
 
 
 def create_agent(model) -> Agent:

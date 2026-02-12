@@ -83,11 +83,21 @@ Buyer Agent                    Nevermined                    Seller Agent
 
 ## Tools
 
+### HTTP Mode (x402)
+
 | Tool | Description | Credits |
 |------|-------------|---------|
 | `discover_pricing` | GET /pricing from seller — shows tiers and costs | Free |
 | `check_balance` | Check NVM credit balance + local budget status | Free |
 | `purchase_data` | Generate x402 token, POST /data, return results | Varies by tier |
+
+### A2A Mode (Agent-to-Agent)
+
+| Tool | Description | Credits |
+|------|-------------|---------|
+| `discover_agent` | Fetch /.well-known/agent.json — agent card + payment info | Free |
+| `check_balance` | Check NVM credit balance + local budget status | Free |
+| `purchase_a2a` | Send A2A message with auto-payment via PaymentsClient | Varies by tool |
 
 **Key difference from seller:** Buyer tools are plain `@tool` — NOT `@requires_payment`. The buyer *generates* payment tokens; it doesn't receive them.
 
@@ -117,7 +127,15 @@ poetry run demo
 
 Pre-scripted prompts that exercise all buyer tools with LLM orchestration.
 
-### 4. AWS AgentCore
+### 4. A2A Client Demo
+
+```bash
+poetry run client-a2a
+```
+
+Step-by-step A2A buyer flow: fetch agent card, parse payment, send A2A message, get response. Requires the seller running in A2A mode (`poetry run agent-a2a`).
+
+### 5. AWS AgentCore
 
 ```bash
 poetry install -E agentcore
@@ -136,7 +154,8 @@ Uses Bedrock for the LLM. Deploy to AWS AgentCore for production.
 | `NVM_ENVIRONMENT` | Yes | `sandbox`, `staging_sandbox`, or `live` |
 | `NVM_PLAN_ID` | Yes | The seller's plan ID you subscribed to |
 | `NVM_AGENT_ID` | No | Seller's agent ID (for token scoping) |
-| `SELLER_URL` | No | Seller endpoint (default: `http://localhost:3000`) |
+| `SELLER_URL` | No | Seller HTTP endpoint (default: `http://localhost:3000`) |
+| `SELLER_A2A_URL` | No | Seller A2A endpoint (default: `http://localhost:9000`) |
 | `OPENAI_API_KEY` | Yes* | OpenAI API key (*not needed for `client`) |
 | `MODEL_ID` | No | OpenAI model (default: `gpt-4o-mini`) |
 | `MAX_DAILY_SPEND` | No | Daily credit limit (0 = unlimited) |
@@ -156,7 +175,7 @@ Before buying data, you need to subscribe to the seller's plan:
 
 | Aspect | Seller | Buyer |
 |--------|--------|-------|
-| Entry point | FastAPI server (port 3000) | Interactive CLI |
+| Entry point | FastAPI server (port 3000) or A2A (port 9000) | Interactive CLI |
 | Tools | `@requires_payment` protected | Plain `@tool` |
 | NVM_API_KEY | Builder/seller key | Subscriber key |
 | NVM_PLAN_ID | "My plan I created" | "The seller's plan I subscribe to" |
@@ -170,7 +189,7 @@ Before buying data, you need to subscribe to the seller's plan:
 2. **Auto-subscribe** — Call `payments.plans.order_plan()` if not yet subscribed
 3. **Quality scoring** — Track data quality per seller over time
 4. **Caching** — Cache results to avoid duplicate purchases
-5. **A2A protocol** — Use agent-to-agent protocol for richer seller discovery
+5. **A2A protocol** — Already supported! Use `discover_agent` + `purchase_a2a` tools
 6. **Persistent budget** — Store budget in file/database instead of in-memory
 
 ## Related
