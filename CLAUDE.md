@@ -276,7 +276,8 @@ hackathons/
 │   └── kit-i-roi-governor/
 ├── agents/                      # Independent agent projects
 │   ├── strands-simple-agent/    # Strands + Nevermined x402 demo
-│   └── seller-simple-agent/     # Data selling agent with tiered pricing
+│   ├── seller-simple-agent/     # Data selling agent with tiered pricing
+│   └── buyer-simple-agent/      # Data buying agent with budget management
 ├── aws-integration/
 │   ├── strands-nevermined/      # Strands SDK + Nevermined
 │   └── agentcore-deployment/    # AgentCore deploy scripts
@@ -292,6 +293,11 @@ Each subfolder under `agents/` is an independent agent project with its own `pyp
   - Run agent: `poetry run python agent.py`
   - Run demo: `poetry run python demo.py`
 - `seller-simple-agent/` - Data selling agent with tiered pricing (1, 5, 10 credits)
+  - Install: `poetry install`
+  - Run agent: `poetry run agent`
+  - Run client: `poetry run client`
+  - Run demo: `poetry run demo`
+- `buyer-simple-agent/` - Data buying agent with x402 payment and budget management
   - Install: `poetry install`
   - Run agent: `poetry run agent`
   - Run client: `poetry run client`
