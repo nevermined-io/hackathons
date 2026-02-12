@@ -97,7 +97,7 @@ BASE_AGENT_CARD = {
         ).model_dump(),
     ],
     "capabilities": {
-        "streaming": False,
+        "streaming": True,
         "pushNotifications": False,
     },
 }

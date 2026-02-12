@@ -5,7 +5,7 @@ Demonstrates the complete buyer-side A2A flow:
 1. Fetch agent card from /.well-known/agent.json
 2. Parse payment extension (planId, credits, agentId)
 3. Check credit balance
-4. Send A2A JSON-RPC message with x402 token
+4. Send A2A message via PaymentsClient with automatic x402 payment
 5. Display response and settlement info
 
 Usage:
