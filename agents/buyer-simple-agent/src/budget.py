@@ -72,16 +72,18 @@ class Budget:
         """Return current budget snapshot."""
         with self._lock:
             self._reset_if_new_day()
-            daily_remaining = (
-                self._max_daily - self._daily_spend
-                if self._max_daily > 0
-                else "unlimited"
-            )
+            unlimited = "unlimited"
             return {
-                "daily_limit": self._max_daily or "unlimited",
+                "daily_limit": self._max_daily if self._max_daily > 0 else unlimited,
                 "daily_spent": self._daily_spend,
-                "daily_remaining": daily_remaining,
-                "per_request_limit": self._max_per_request or "unlimited",
+                "daily_remaining": (
+                    self._max_daily - self._daily_spend
+                    if self._max_daily > 0
+                    else unlimited
+                ),
+                "per_request_limit": (
+                    self._max_per_request if self._max_per_request > 0 else unlimited
+                ),
                 "total_spent": self._total_spend,
                 "total_purchases": self._purchase_count,
                 "recent_purchases": self._purchases[-5:],

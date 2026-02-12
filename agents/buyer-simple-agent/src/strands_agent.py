@@ -67,7 +67,6 @@ def check_balance() -> dict:
     budget_status = budget.get_status()
     result["budget"] = budget_status
 
-    # Append budget info to the text content
     budget_lines = [
         "",
         "Local budget:",
@@ -95,9 +94,8 @@ def purchase_data(query: str, seller_url: str = "") -> dict:
     """
     url = seller_url or SELLER_URL
 
-    # Budget pre-check (estimate based on per-request limit or 1 credit minimum)
-    estimated_cost = MAX_PER_REQUEST if MAX_PER_REQUEST > 0 else 10
-    allowed, reason = budget.can_spend(estimated_cost)
+    # Pre-check with minimum 1 credit (actual cost is determined by the seller)
+    allowed, reason = budget.can_spend(1)
     if not allowed:
         return {
             "status": "budget_exceeded",
@@ -113,7 +111,6 @@ def purchase_data(query: str, seller_url: str = "") -> dict:
         agent_id=NVM_AGENT_ID,
     )
 
-    # Record actual spend if successful
     credits_used = result.get("credits_used", 0)
     if result.get("status") == "success" and credits_used > 0:
         budget.record_purchase(credits_used, url, query)

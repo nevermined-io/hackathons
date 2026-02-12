@@ -51,6 +51,42 @@ def pretty_json(obj: dict) -> str:
     return json.dumps(obj, indent=2)
 
 
+def print_step(number: int, title: str):
+    """Print a formatted step header."""
+    print(f"\n{'=' * 60}")
+    print(f"STEP {number}: {title}")
+    print("=" * 60)
+
+
+def print_result(result: dict):
+    """Print status and content from a tool result."""
+    print(f"\nStatus: {result['status']}")
+    if result.get("content"):
+        print(result["content"][0]["text"])
+
+
+def purchase_and_record(query: str):
+    """Execute a purchase and record it in the budget tracker."""
+    print(f"\nQuery: {query}")
+
+    result = purchase_data_impl(
+        payments=payments,
+        plan_id=NVM_PLAN_ID,
+        seller_url=SELLER_URL,
+        query=query,
+        agent_id=NVM_AGENT_ID,
+    )
+    print(f"Status: {result['status']}")
+    print(f"Credits used: {result.get('credits_used', 0)}")
+    if result.get("content"):
+        print(f"Response: {result['content'][0]['text'][:500]}...")
+
+    if result.get("status") == "success":
+        budget.record_purchase(result["credits_used"], SELLER_URL, query)
+
+    return result
+
+
 def main():
     """Run the step-by-step buyer demo."""
     print("=" * 60)
@@ -59,88 +95,26 @@ def main():
     print(f"\nSeller: {SELLER_URL}")
     print(f"Plan ID: {NVM_PLAN_ID}")
 
-    # Step 1: Discover pricing
-    print("\n" + "=" * 60)
-    print("STEP 1: Discover seller pricing tiers")
-    print("=" * 60)
+    print_step(1, "Discover seller pricing tiers")
+    print_result(discover_pricing_impl(SELLER_URL))
 
-    pricing = discover_pricing_impl(SELLER_URL)
-    print(f"\nStatus: {pricing['status']}")
-    if pricing.get("content"):
-        print(pricing["content"][0]["text"])
+    print_step(2, "Check credit balance")
+    print_result(check_balance_impl(payments, NVM_PLAN_ID))
 
-    # Step 2: Check balance
-    print("\n" + "=" * 60)
-    print("STEP 2: Check credit balance")
-    print("=" * 60)
+    print_step(3, "Purchase data — simple search (1 credit)")
+    purchase_and_record("AI agent market trends 2025")
 
-    balance = check_balance_impl(payments, NVM_PLAN_ID)
-    print(f"\nStatus: {balance['status']}")
-    if balance.get("content"):
-        print(balance["content"][0]["text"])
-
-    # Step 3: Purchase — simple search (1 credit)
-    print("\n" + "=" * 60)
-    print("STEP 3: Purchase data — simple search (1 credit)")
-    print("=" * 60)
-
-    query1 = "AI agent market trends 2025"
-    print(f"\nQuery: {query1}")
-
-    result1 = purchase_data_impl(
-        payments=payments,
-        plan_id=NVM_PLAN_ID,
-        seller_url=SELLER_URL,
-        query=query1,
-        agent_id=NVM_AGENT_ID,
-    )
-    print(f"Status: {result1['status']}")
-    print(f"Credits used: {result1.get('credits_used', 0)}")
-    if result1.get("content"):
-        response_text = result1["content"][0]["text"]
-        print(f"Response: {response_text[:500]}...")
-
-    if result1.get("status") == "success":
-        budget.record_purchase(result1["credits_used"], SELLER_URL, query1)
-
-    # Step 4: Purchase — research query (10 credits)
-    print("\n" + "=" * 60)
-    print("STEP 4: Purchase data — research report (10 credits)")
-    print("=" * 60)
-
+    print_step(4, "Purchase data — research report (10 credits)")
     query2 = "Conduct deep research on autonomous agent economies and pricing models"
-    print(f"\nQuery: {query2}")
-
     allowed, reason = budget.can_spend(10)
-    print(f"Budget check: {'OK' if allowed else reason}")
-
+    print(f"\nBudget check: {'OK' if allowed else reason}")
     if allowed:
-        result2 = purchase_data_impl(
-            payments=payments,
-            plan_id=NVM_PLAN_ID,
-            seller_url=SELLER_URL,
-            query=query2,
-            agent_id=NVM_AGENT_ID,
-        )
-        print(f"Status: {result2['status']}")
-        print(f"Credits used: {result2.get('credits_used', 0)}")
-        if result2.get("content"):
-            response_text = result2["content"][0]["text"]
-            print(f"Response: {response_text[:500]}...")
+        purchase_and_record(query2)
 
-        if result2.get("status") == "success":
-            budget.record_purchase(result2["credits_used"], SELLER_URL, query2)
+    print_step(5, "Review budget")
+    print(f"\n{pretty_json(budget.get_status())}")
 
-    # Step 5: Review budget
-    print("\n" + "=" * 60)
-    print("STEP 5: Review budget")
-    print("=" * 60)
-
-    status = budget.get_status()
-    print(f"\n{pretty_json(status)}")
-
-    # Summary
-    print("\n" + "=" * 60)
+    print(f"\n{'=' * 60}")
     print("FLOW COMPLETE!")
     print("=" * 60)
     print(
