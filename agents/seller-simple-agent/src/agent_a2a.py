@@ -7,7 +7,7 @@ Runs the seller as an A2A-compliant agent with:
 - Automatic credit settlement via PaymentsRequestHandler
 
 Payment flow:
-1. Client fetches /.well-known/agent.json → discovers payment requirements
+1. Client fetches /.well-known/agent.json -> discovers payment requirements
 2. Client sends A2A message with payment-signature header
 3. PaymentsRequestHandler validates the token
 4. StrandsA2AExecutor runs the Strands agent (plain tools)
@@ -20,6 +20,7 @@ Usage:
 import asyncio
 import datetime
 import os
+import sys
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -53,7 +54,6 @@ NVM_AGENT_ID = os.getenv("NVM_AGENT_ID", "")
 A2A_PORT = int(os.getenv("A2A_PORT", "9000"))
 
 if not NVM_AGENT_ID:
-    import sys
     print("ERROR: NVM_AGENT_ID is required for A2A mode.")
     print("Set it in your .env file. You can find it in the Nevermined App")
     print("under your agent's settings, or use the Plan ID as a fallback.")
@@ -120,6 +120,53 @@ AGENT_CARD = build_payment_agent_card(
 # Custom executor that wraps the Strands agent for A2A
 # ---------------------------------------------------------------------------
 
+def _now_iso() -> str:
+    """Return the current UTC timestamp in ISO format."""
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def _make_status_event(
+    task_id: str,
+    context_id: str,
+    state: TaskState,
+    text: str,
+    credits_used: int | None = None,
+    final: bool = True,
+) -> TaskStatusUpdateEvent:
+    """Build a TaskStatusUpdateEvent with a text message."""
+    metadata = {"creditsUsed": credits_used} if credits_used is not None else None
+    return TaskStatusUpdateEvent(
+        task_id=task_id,
+        context_id=context_id,
+        status=TaskStatus(
+            state=state,
+            message=Message(
+                message_id=str(uuid4()),
+                role=Role.agent,
+                parts=[{"kind": "text", "text": text}],
+                task_id=task_id,
+                context_id=context_id,
+            ),
+            timestamp=_now_iso(),
+        ),
+        metadata=metadata,
+        final=final,
+    )
+
+
+def _extract_text_from_parts(parts) -> str:
+    """Extract text from a list of A2A message parts."""
+    fragments = []
+    for part in parts:
+        if hasattr(part, "root"):
+            part = part.root
+        if hasattr(part, "text"):
+            fragments.append(part.text)
+        elif isinstance(part, dict) and part.get("kind") == "text":
+            fragments.append(part.get("text", ""))
+    return "".join(fragments)
+
+
 class StrandsA2AExecutor(AgentExecutor):
     """Execute A2A requests by delegating to a Strands agent.
 
@@ -135,105 +182,51 @@ class StrandsA2AExecutor(AgentExecutor):
         task_id = context.task_id or str(uuid4())
         context_id = context.context_id or str(uuid4())
 
-        # Publish initial Task
-        if not (hasattr(context, "current_task") and context.current_task):
-            initial_task = Task(
-                id=task_id,
-                context_id=context_id,
-                status=TaskStatus(
-                    state=TaskState.submitted,
-                    timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                ),
-                history=[],
+        # Publish initial Task if this is a new request
+        if not getattr(context, "current_task", None):
+            await event_queue.enqueue_event(
+                Task(
+                    id=task_id,
+                    context_id=context_id,
+                    status=TaskStatus(
+                        state=TaskState.submitted, timestamp=_now_iso()
+                    ),
+                    history=[],
+                )
             )
-            await event_queue.enqueue_event(initial_task)
 
         # Publish working status
         await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                task_id=task_id,
-                context_id=context_id,
-                status=TaskStatus(
-                    state=TaskState.working,
-                    message=Message(
-                        message_id=str(uuid4()),
-                        role=Role.agent,
-                        parts=[{"kind": "text", "text": "Processing request..."}],
-                        task_id=task_id,
-                        context_id=context_id,
-                    ),
-                    timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                ),
-                final=False,
+            _make_status_event(
+                task_id, context_id, TaskState.working,
+                "Processing request...", final=False,
             )
         )
 
         # Extract user text from A2A message
-        user_text = ""
-        if hasattr(context, "message") and context.message:
-            for part in getattr(context.message, "parts", []):
-                if hasattr(part, "root"):
-                    part = part.root
-                if hasattr(part, "text"):
-                    user_text += part.text
-                elif isinstance(part, dict) and part.get("kind") == "text":
-                    user_text += part.get("text", "")
-
-        if not user_text:
-            user_text = "Hello"
+        user_text = self._extract_user_text(context) or "Hello"
 
         # Run the Strands agent
+        # Snapshot message count so we only count credits from this request
+        msg_offset = len(self._agent.messages)
         try:
-            result = await asyncio.to_thread(
-                lambda: self._agent(user_text)
-            )
+            result = await asyncio.to_thread(self._agent, user_text)
             response_text = str(result)
         except Exception as exc:
-            # Publish failed status
             await event_queue.enqueue_event(
-                TaskStatusUpdateEvent(
-                    task_id=task_id,
-                    context_id=context_id,
-                    status=TaskStatus(
-                        state=TaskState.failed,
-                        message=Message(
-                            message_id=str(uuid4()),
-                            role=Role.agent,
-                            parts=[{"kind": "text", "text": f"Error: {exc}"}],
-                            task_id=task_id,
-                            context_id=context_id,
-                        ),
-                        timestamp=datetime.datetime.now(
-                            datetime.timezone.utc
-                        ).isoformat(),
-                    ),
-                    metadata={"creditsUsed": 0},
-                    final=True,
+                _make_status_event(
+                    task_id, context_id, TaskState.failed,
+                    f"Error: {exc}", credits_used=0,
                 )
             )
             return
 
-        # Determine credits used from agent messages
-        credits_used = self._calculate_credits(self._agent.messages)
+        credits_used = self._calculate_credits(self._agent.messages[msg_offset:])
 
-        # Publish completed status with creditsUsed metadata
         await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                task_id=task_id,
-                context_id=context_id,
-                status=TaskStatus(
-                    state=TaskState.completed,
-                    message=Message(
-                        message_id=str(uuid4()),
-                        role=Role.agent,
-                        parts=[{"kind": "text", "text": response_text}],
-                        task_id=task_id,
-                        context_id=context_id,
-                    ),
-                    timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                ),
-                metadata={"creditsUsed": credits_used},
-                final=True,
+            _make_status_event(
+                task_id, context_id, TaskState.completed,
+                response_text, credits_used=credits_used,
             )
         )
 
@@ -241,24 +234,20 @@ class StrandsA2AExecutor(AgentExecutor):
         task_id = getattr(context, "task_id", None) or str(uuid4())
         context_id = getattr(context, "context_id", None) or str(uuid4())
         await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                task_id=task_id,
-                context_id=context_id,
-                status=TaskStatus(
-                    state=TaskState.canceled,
-                    message=Message(
-                        message_id=str(uuid4()),
-                        role=Role.agent,
-                        parts=[{"kind": "text", "text": "Task cancelled."}],
-                        task_id=task_id,
-                        context_id=context_id,
-                    ),
-                    timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                ),
-                metadata={"creditsUsed": 0},
-                final=True,
+            _make_status_event(
+                task_id, context_id, TaskState.canceled,
+                "Task cancelled.", credits_used=0,
             )
         )
+
+    @staticmethod
+    def _extract_user_text(context) -> str:
+        """Extract the user's text from an A2A message context."""
+        message = getattr(context, "message", None)
+        if not message:
+            return ""
+        parts = getattr(message, "parts", [])
+        return _extract_text_from_parts(parts)
 
     @staticmethod
     def _calculate_credits(messages: list) -> int:
@@ -269,8 +258,7 @@ class StrandsA2AExecutor(AgentExecutor):
                 continue
             for block in msg.get("content", []):
                 if isinstance(block, dict) and block.get("type") == "tool_use":
-                    tool_name = block.get("name", "")
-                    total += CREDIT_MAP.get(tool_name, 1)
+                    total += CREDIT_MAP.get(block.get("name", ""), 1)
         return total or 1  # minimum 1 credit per request
 
 

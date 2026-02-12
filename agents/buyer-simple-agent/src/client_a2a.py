@@ -15,7 +15,6 @@ Usage:
     poetry run client-a2a
 """
 
-import json
 import os
 import sys
 
@@ -25,8 +24,8 @@ load_dotenv()
 
 from payments_py import Payments, PaymentOptions
 
-from .tools.discover_a2a import discover_agent_impl
 from .tools.balance import check_balance_impl
+from .tools.discover_a2a import discover_agent_impl
 from .tools.purchase_a2a import purchase_a2a_impl
 
 SELLER_A2A_URL = os.getenv("SELLER_A2A_URL", "http://localhost:9000")
@@ -41,11 +40,6 @@ if not NVM_API_KEY:
 payments = Payments.get_instance(
     PaymentOptions(nvm_api_key=NVM_API_KEY, environment=NVM_ENVIRONMENT)
 )
-
-
-def pretty_json(obj: dict) -> str:
-    """Format JSON for console output."""
-    return json.dumps(obj, indent=2)
 
 
 def print_step(number: int, title: str):

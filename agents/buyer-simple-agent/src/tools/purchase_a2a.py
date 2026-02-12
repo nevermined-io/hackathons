@@ -9,6 +9,21 @@ from payments_py import Payments
 from payments_py.a2a.payments_client import PaymentsClient
 
 
+def _error(message: str) -> dict:
+    """Build a standard error response."""
+    return {"status": "error", "content": [{"text": message}], "credits_used": 0}
+
+
+def _success(text: str, credits_used: int = 0) -> dict:
+    """Build a standard success response."""
+    return {
+        "status": "success",
+        "content": [{"text": text}],
+        "response": text,
+        "credits_used": credits_used,
+    }
+
+
 def purchase_a2a_impl(
     payments: Payments,
     plan_id: str,
@@ -51,19 +66,10 @@ def purchase_a2a_impl(
         events = asyncio.run(_collect_stream(client, params))
         return _extract_from_events(events)
 
+    except (ConnectionError, OSError):
+        return _error(f"Cannot connect to agent at {agent_url}. Is it running?")
     except Exception as e:
-        error_msg = str(e)
-        if "Connect" in error_msg or "ConnectionRefused" in error_msg:
-            return {
-                "status": "error",
-                "content": [{"text": f"Cannot connect to agent at {agent_url}. Is it running?"}],
-                "credits_used": 0,
-            }
-        return {
-            "status": "error",
-            "content": [{"text": f"A2A purchase failed: {e}"}],
-            "credits_used": 0,
-        }
+        return _error(f"A2A purchase failed: {e}")
 
 
 async def _collect_stream(client: PaymentsClient, params: MessageSendParams) -> list:
@@ -75,16 +81,27 @@ async def _collect_stream(client: PaymentsClient, params: MessageSendParams) -> 
 
 
 def _extract_text_from_parts(parts) -> str:
-    """Extract text from a list of message parts."""
-    text = ""
+    """Extract text from a list of A2A message parts.
+
+    Parts may be Pydantic models (with .root/.text) or plain dicts.
+    """
+    fragments = []
     for part in parts:
         if hasattr(part, "root"):
             part = part.root
         if hasattr(part, "text"):
-            text += part.text
+            fragments.append(part.text)
         elif isinstance(part, dict) and part.get("kind") == "text":
-            text += part.get("text", "")
-    return text
+            fragments.append(part.get("text", ""))
+    return "".join(fragments)
+
+
+def _get_metadata_value(obj, key: str, default=0):
+    """Safely read a key from an object's metadata dict."""
+    metadata = getattr(obj, "metadata", None) or {}
+    if isinstance(metadata, dict):
+        return metadata.get(key, default)
+    return default
 
 
 def _extract_from_events(events: list) -> dict:
@@ -93,70 +110,44 @@ def _extract_from_events(events: list) -> dict:
     Events are tuples of (Task, TaskStatusUpdateEvent | None).
     We look for the last completed event and extract text + creditsUsed.
     """
-    response_text = ""
-    credits_used = 0
-
     if not events:
-        return {
-            "status": "success",
-            "content": [{"text": "Agent completed the task but returned no events."}],
-            "response": "",
-            "credits_used": 0,
-        }
+        return _success("Agent completed the task but returned no events.")
 
-    # Walk events in reverse to find the final completed one
     for event in reversed(events):
         # Unwrap tuple: (Task, TaskStatusUpdateEvent | None)
-        task = None
-        status_update = None
         if isinstance(event, tuple):
-            task = event[0] if len(event) > 0 else None
-            status_update = event[1] if len(event) > 1 else None
+            task, status_update = event[0], event[1] if len(event) > 1 else None
         else:
-            task = event
+            task, status_update = event, None
 
-        # Check the Task object's status
-        if task is not None and hasattr(task, "status") and task.status:
-            state = task.status.state
-            state_val = state.value if hasattr(state, "value") else str(state)
+        status = getattr(task, "status", None)
+        if not status:
+            continue
 
-            if state_val == "completed":
-                # Extract text from status.message
-                if hasattr(task.status, "message") and task.status.message:
-                    parts = getattr(task.status.message, "parts", [])
-                    response_text = _extract_text_from_parts(parts)
+        state = status.state
+        state_val = state.value if hasattr(state, "value") else str(state)
 
-                # Extract creditsUsed from TaskStatusUpdateEvent metadata
-                if status_update is not None:
-                    metadata = getattr(status_update, "metadata", None) or {}
-                    if isinstance(metadata, dict):
-                        credits_used = metadata.get("creditsUsed", 0)
+        if state_val == "completed":
+            message = getattr(status, "message", None)
+            parts = getattr(message, "parts", []) if message else []
+            response_text = _extract_text_from_parts(parts)
 
-                # Fallback: check task-level metadata
-                if credits_used == 0:
-                    metadata = getattr(task, "metadata", None) or {}
-                    if isinstance(metadata, dict):
-                        credits_used = metadata.get("creditsUsed", 0)
+            # Prefer creditsUsed from the status update event, fall back to task
+            credits_used = 0
+            if status_update is not None:
+                credits_used = _get_metadata_value(status_update, "creditsUsed")
+            if credits_used == 0:
+                credits_used = _get_metadata_value(task, "creditsUsed")
 
-                break
+            return _success(
+                response_text or "Agent completed the task but returned no text.",
+                credits_used,
+            )
 
-            elif state_val == "failed":
-                msg_text = ""
-                if hasattr(task.status, "message") and task.status.message:
-                    parts = getattr(task.status.message, "parts", [])
-                    msg_text = _extract_text_from_parts(parts)
-                return {
-                    "status": "error",
-                    "content": [{"text": msg_text or "Agent task failed."}],
-                    "credits_used": 0,
-                }
+        if state_val == "failed":
+            message = getattr(status, "message", None)
+            parts = getattr(message, "parts", []) if message else []
+            msg_text = _extract_text_from_parts(parts)
+            return _error(msg_text or "Agent task failed.")
 
-    if not response_text:
-        response_text = "Agent completed the task but returned no text."
-
-    return {
-        "status": "success",
-        "content": [{"text": response_text}],
-        "response": response_text,
-        "credits_used": credits_used,
-    }
+    return _success("Agent completed the task but returned no text.")
