@@ -16,8 +16,8 @@ def check_balance_impl(payments: Payments, plan_id: str) -> dict:
     try:
         result = payments.plans.get_plan_balance(plan_id)
 
-        balance = result.get("balance", 0)
-        is_subscriber = result.get("isSubscriber", False)
+        balance = result.balance
+        is_subscriber = result.is_subscriber
 
         lines = [
             f"Plan ID: {plan_id}",
