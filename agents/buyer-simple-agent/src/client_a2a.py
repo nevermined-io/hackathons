@@ -5,7 +5,7 @@ Demonstrates the complete buyer-side A2A flow:
 1. Fetch agent card from /.well-known/agent.json
 2. Parse payment extension (planId, credits, agentId)
 3. Check credit balance
-4. Send A2A message via PaymentsClient with auto-payment
+4. Send A2A JSON-RPC message with x402 token
 5. Display response and settlement info
 
 Usage:
@@ -15,22 +15,19 @@ Usage:
     poetry run client-a2a
 """
 
-import asyncio
 import json
 import os
 import sys
-from uuid import uuid4
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from a2a.types import Message, MessageSendParams, Role
-
 from payments_py import Payments, PaymentOptions
 
 from .tools.discover_a2a import discover_agent_impl
 from .tools.balance import check_balance_impl
+from .tools.purchase_a2a import purchase_a2a_impl
 
 SELLER_A2A_URL = os.getenv("SELLER_A2A_URL", "http://localhost:9000")
 NVM_API_KEY = os.getenv("NVM_API_KEY", "")
@@ -63,49 +60,6 @@ def print_result(result: dict):
     print(f"\nStatus: {result['status']}")
     if result.get("content"):
         print(result["content"][0]["text"])
-
-
-async def send_a2a_message(plan_id: str, agent_id: str, query: str) -> dict:
-    """Send an A2A message and return the result."""
-    client = payments.a2a.get_client(
-        agent_base_url=SELLER_A2A_URL,
-        agent_id=agent_id,
-        plan_id=plan_id,
-    )
-
-    message = Message(
-        message_id=str(uuid4()),
-        role=Role.user,
-        parts=[{"kind": "text", "text": query}],
-    )
-
-    params = MessageSendParams(message=message)
-    print(f"\nSending A2A message: {query}")
-
-    result = await client.send_message(params)
-
-    # Extract response
-    response_text = ""
-    credits_used = 0
-
-    if result and hasattr(result, "status") and result.status:
-        status = result.status
-        if hasattr(status, "message") and status.message:
-            for part in getattr(status.message, "parts", []):
-                if hasattr(part, "root"):
-                    part = part.root
-                if hasattr(part, "text"):
-                    response_text += part.text
-                elif isinstance(part, dict) and part.get("kind") == "text":
-                    response_text += part.get("text", "")
-        if hasattr(status, "metadata"):
-            metadata = status.metadata or {}
-            credits_used = metadata.get("creditsUsed", 0)
-
-    return {
-        "response": response_text or "No response text",
-        "credits_used": credits_used,
-    }
 
 
 def main():
@@ -147,14 +101,18 @@ def main():
 
     # Step 4: Send A2A message
     print_step(4, "Send A2A message — search query")
-    try:
-        result = asyncio.run(
-            send_a2a_message(plan_id, agent_id, "AI agent market trends 2025")
-        )
-        print(f"\nCredits used: {result['credits_used']}")
-        print(f"Response: {result['response'][:500]}...")
-    except Exception as e:
-        print(f"\nA2A message failed: {e}")
+    result = purchase_a2a_impl(
+        payments=payments,
+        plan_id=plan_id,
+        agent_url=SELLER_A2A_URL,
+        agent_id=agent_id,
+        query="AI agent market trends 2025",
+    )
+    print(f"\nStatus: {result['status']}")
+    print(f"Credits used: {result.get('credits_used', 0)}")
+    if result.get("content"):
+        text = result["content"][0]["text"]
+        print(f"Response: {text[:500]}{'...' if len(text) > 500 else ''}")
 
     # Step 5: Summary
     print_step(5, "Summary")
@@ -164,7 +122,7 @@ A2A Buyer Flow Summary:
 1. GET  /.well-known/agent.json  -> Discovered agent card + payment info
 2. Parsed payment extension      -> Plan ID, Agent ID, credits
 3. Checked NVM balance           -> Credit balance and subscriber status
-4. A2A message (with auto-pay)   -> Sent query, got response
+4. A2A message (with x402 token) -> Sent query, got response
 """
     )
 

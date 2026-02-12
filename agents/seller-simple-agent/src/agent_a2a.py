@@ -52,6 +52,13 @@ NVM_PLAN_ID = os.environ["NVM_PLAN_ID"]
 NVM_AGENT_ID = os.getenv("NVM_AGENT_ID", "")
 A2A_PORT = int(os.getenv("A2A_PORT", "9000"))
 
+if not NVM_AGENT_ID:
+    import sys
+    print("ERROR: NVM_AGENT_ID is required for A2A mode.")
+    print("Set it in your .env file. You can find it in the Nevermined App")
+    print("under your agent's settings, or use the Plan ID as a fallback.")
+    sys.exit(1)
+
 payments = Payments.get_instance(
     PaymentOptions(nvm_api_key=NVM_API_KEY, environment=NVM_ENVIRONMENT)
 )

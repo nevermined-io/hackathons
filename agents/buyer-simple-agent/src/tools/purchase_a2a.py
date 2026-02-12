@@ -1,13 +1,9 @@
-"""Purchase data from a seller via A2A protocol — uses PaymentsClient."""
+"""Purchase data from a seller via A2A protocol — JSON-RPC with x402 auth."""
 
-import asyncio
+import json
 from uuid import uuid4
 
-from a2a.types import (
-    Message,
-    MessageSendParams,
-    Role,
-)
+import httpx
 
 from payments_py import Payments
 
@@ -19,10 +15,10 @@ def purchase_a2a_impl(
     agent_id: str,
     query: str,
 ) -> dict:
-    """Send an A2A message to a seller with automatic x402 payment.
+    """Send an A2A message to a seller with x402 payment.
 
-    Uses PaymentsClient which auto-generates the x402 access token
-    and injects it as a payment-signature header.
+    Generates an x402 access token, then sends an A2A JSON-RPC message
+    with the token in the payment-signature header.
 
     Args:
         payments: Initialized Payments SDK instance.
@@ -34,110 +30,125 @@ def purchase_a2a_impl(
     Returns:
         dict with status, content (for Strands), response text, and credits_used.
     """
-    return asyncio.get_event_loop().run_until_complete(
-        _purchase_a2a_async(payments, plan_id, agent_url, agent_id, query)
-    ) if _has_running_loop() else asyncio.run(
-        _purchase_a2a_async(payments, plan_id, agent_url, agent_id, query)
-    )
-
-
-def _has_running_loop() -> bool:
-    """Check if there's already a running event loop."""
     try:
-        loop = asyncio.get_running_loop()
-        return loop.is_running()
-    except RuntimeError:
-        return False
-
-
-async def _purchase_a2a_async(
-    payments: Payments,
-    plan_id: str,
-    agent_url: str,
-    agent_id: str,
-    query: str,
-) -> dict:
-    """Async implementation of A2A purchase."""
-    try:
-        client = payments.a2a.get_client(
-            agent_base_url=agent_url,
-            agent_id=agent_id,
+        # Step 1: Generate x402 access token (sync)
+        token_result = payments.x402.get_x402_access_token(
             plan_id=plan_id,
+            agent_id=agent_id,
         )
+        access_token = token_result.get("accessToken")
 
-        message = Message(
-            message_id=str(uuid4()),
-            role=Role.user,
-            parts=[{"kind": "text", "text": query}],
-        )
-
-        params = MessageSendParams(message=message)
-
-        result = await client.send_message(params)
-
-        # Extract response text from the result
-        response_text = ""
-        credits_used = 0
-
-        if result is None:
+        if not access_token:
             return {
                 "status": "error",
-                "content": [{"text": "No response from seller agent."}],
+                "content": [{"text": (
+                    "Failed to generate x402 access token. "
+                    "Are you subscribed to this plan?"
+                )}],
                 "credits_used": 0,
             }
 
-        # Result can be a Task or Message
-        if hasattr(result, "status") and result.status:
-            status = result.status
-            if hasattr(status, "message") and status.message:
-                for part in getattr(status.message, "parts", []):
-                    if hasattr(part, "root"):
-                        part = part.root
-                    if hasattr(part, "text"):
-                        response_text += part.text
-                    elif isinstance(part, dict) and part.get("kind") == "text":
-                        response_text += part.get("text", "")
-
-        # Check for creditsUsed in metadata
-        if hasattr(result, "status") and hasattr(result.status, "metadata"):
-            metadata = result.status.metadata or {}
-            credits_used = metadata.get("creditsUsed", 0)
-
-        # Also check task-level metadata
-        if hasattr(result, "metadata"):
-            task_meta = result.metadata or {}
-            if "creditsUsed" in task_meta:
-                credits_used = task_meta["creditsUsed"]
-
-        if not response_text:
-            # Try artifacts
-            for artifact in getattr(result, "artifacts", []):
-                for part in getattr(artifact, "parts", []):
-                    if hasattr(part, "root"):
-                        part = part.root
-                    if hasattr(part, "text"):
-                        response_text += part.text
-
-        if not response_text:
-            response_text = "Agent completed the task but returned no text."
-
-        return {
-            "status": "success",
-            "content": [{"text": response_text}],
-            "response": response_text,
-            "credits_used": credits_used,
+        # Step 2: Build A2A JSON-RPC message
+        message_id = str(uuid4())
+        rpc_body = {
+            "jsonrpc": "2.0",
+            "id": str(uuid4()),
+            "method": "message/send",
+            "params": {
+                "message": {
+                    "messageId": message_id,
+                    "role": "user",
+                    "parts": [{"kind": "text", "text": query}],
+                }
+            },
         }
 
-    except Exception as e:
-        error_msg = str(e)
-        if "402" in error_msg or "Payment" in error_msg:
+        # Step 3: Send with payment-signature header
+        url = agent_url.rstrip("/") + "/"
+        with httpx.Client(timeout=90.0) as client:
+            response = client.post(
+                url,
+                headers={
+                    "Content-Type": "application/json",
+                    "payment-signature": access_token,
+                },
+                json=rpc_body,
+            )
+
+        if response.status_code == 402:
             return {
                 "status": "payment_required",
-                "content": [{"text": f"Payment failed: {error_msg}"}],
+                "content": [{"text": "Payment required (HTTP 402). Check credits or token."}],
                 "credits_used": 0,
             }
+
+        if response.status_code != 200:
+            return {
+                "status": "error",
+                "content": [{"text": (
+                    f"A2A server returned HTTP {response.status_code}: "
+                    f"{response.text[:500]}"
+                )}],
+                "credits_used": 0,
+            }
+
+        # Step 4: Parse JSON-RPC response
+        rpc_response = response.json()
+
+        if "error" in rpc_response:
+            error = rpc_response["error"]
+            return {
+                "status": "error",
+                "content": [{"text": f"A2A error: {error.get('message', error)}"}],
+                "credits_used": 0,
+            }
+
+        result = rpc_response.get("result", {})
+        return _extract_response(result)
+
+    except httpx.ConnectError:
         return {
             "status": "error",
-            "content": [{"text": f"A2A purchase failed: {error_msg}"}],
+            "content": [{"text": f"Cannot connect to agent at {agent_url}. Is it running?"}],
             "credits_used": 0,
         }
+    except Exception as e:
+        return {
+            "status": "error",
+            "content": [{"text": f"A2A purchase failed: {e}"}],
+            "credits_used": 0,
+        }
+
+
+def _extract_response(result: dict) -> dict:
+    """Extract text and credits from an A2A Task/Message result."""
+    response_text = ""
+    credits_used = 0
+
+    # Extract from status.message.parts
+    status = result.get("status", {})
+    message = status.get("message", {})
+    for part in message.get("parts", []):
+        if isinstance(part, dict) and part.get("kind") == "text":
+            response_text += part.get("text", "")
+
+    # Extract creditsUsed from metadata
+    metadata = status.get("metadata") or result.get("metadata") or {}
+    credits_used = metadata.get("creditsUsed", 0)
+
+    # Try artifacts if no text in status
+    if not response_text:
+        for artifact in result.get("artifacts", []):
+            for part in artifact.get("parts", []):
+                if isinstance(part, dict) and part.get("kind") == "text":
+                    response_text += part.get("text", "")
+
+    if not response_text:
+        response_text = "Agent completed the task but returned no text."
+
+    return {
+        "status": "success",
+        "content": [{"text": response_text}],
+        "response": response_text,
+        "credits_used": credits_used,
+    }
