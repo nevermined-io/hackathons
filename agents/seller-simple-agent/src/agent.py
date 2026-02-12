@@ -83,7 +83,7 @@ async def data(request: Request, body: DataRequest) -> JSONResponse:
 
         # Success — record analytics
         settlement = state.get("payment_settlement")
-        credits = settlement.credits_redeemed if settlement else 0
+        credits = int(settlement.credits_redeemed) if settlement else 0
         analytics.record_request("request", credits)
 
         return JSONResponse(content={
