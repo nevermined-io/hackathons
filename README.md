@@ -45,7 +45,7 @@ cp .env.example .env
 | Kit | Name | Description | Languages |
 |-----|------|-------------|-----------|
 | **A** | [Buyer Agent](./starter-kits/kit-a-buyer-agent/) | Discovers and purchases data autonomously | TS, Python |
-| **B** | [Selling Agent](./starter-kits/kit-b-selling-agent/) | Registers and sells data/services | TS, Python |
+| **B** | [Selling Agent](./starter-kits/kit-b-selling-agent/) ([code](./agents/seller-simple-agent/)) | Registers and sells data/services | TS, Python |
 | **C** | [Switching Agent](./starter-kits/kit-c-switching-agent/) | Switches between data providers based on price/quality | TS |
 
 ### Track 2: Internal A2A Economy
@@ -71,6 +71,7 @@ Complete working agents in the [`agents/`](./agents/) directory:
 | Agent | Description | Stack |
 |-------|-------------|-------|
 | [strands-simple-agent](./agents/strands-simple-agent/) | Strands AI agent with x402 payment-protected tools and full payment discovery flow | Python, Strands SDK, Nevermined |
+| [seller-simple-agent](./agents/seller-simple-agent/) | Data selling agent with tiered pricing, FastAPI server, and AgentCore deployment | Python, Strands SDK, Nevermined |
 
 ## Protocol Overview
 

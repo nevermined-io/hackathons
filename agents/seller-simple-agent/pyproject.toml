@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "kit-b-selling-agent"
+name = "seller-simple-agent"
 version = "0.1.0"
-description = "Data Selling Agent - Hackathon Starter Kit B (Python)"
+description = "Data selling agent with x402 payment-protected tools"
 package-mode = false
 
 [tool.poetry.dependencies]
