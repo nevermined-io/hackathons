@@ -240,6 +240,8 @@ poetry install
 
 # Run the agent (server)
 poetry run agent
+# NOTE: For agents with package-mode = false (buyer/seller-simple-agent),
+# use: poetry run python -m src.agent
 
 # Run the client
 poetry run client
@@ -274,10 +276,12 @@ hackathons/
 │   ├── kit-g-requesting-agent/
 │   ├── kit-h-servicing-agent/
 │   └── kit-i-roi-governor/
+├── demo-scripts/                # Demo walkthroughs (CLI + frontend)
 ├── agents/                      # Independent agent projects
 │   ├── strands-simple-agent/    # Strands + Nevermined x402 demo
 │   ├── seller-simple-agent/     # Data selling agent with tiered pricing
-│   └── buyer-simple-agent/      # Data buying agent with budget management
+│   └── buyer-simple-agent/      # Data buying agent with web frontend
+│       └── frontend/            # React + Vite chat UI
 ├── aws-integration/
 │   ├── strands-nevermined/      # Strands SDK + Nevermined
 │   └── agentcore-deployment/    # AgentCore deploy scripts
@@ -294,16 +298,19 @@ Each subfolder under `agents/` is an independent agent project with its own `pyp
   - Run demo: `poetry run python demo.py`
 - `seller-simple-agent/` - Data selling agent with tiered pricing (1, 5, 10 credits)
   - Install: `poetry install`
-  - Run agent (HTTP): `poetry run agent`
-  - Run agent (A2A): `poetry run agent-a2a`
-  - Run client: `poetry run client`
-  - Run demo: `poetry run demo`
-- `buyer-simple-agent/` - Data buying agent with x402 payment and budget management
-  - Install: `poetry install`
-  - Run agent: `poetry run agent`
-  - Run client (HTTP): `poetry run client`
-  - Run client (A2A): `poetry run client-a2a`
-  - Run demo: `poetry run demo`
+  - Run agent (HTTP): `poetry run python -m src.agent`
+  - Run agent (A2A): `poetry run python -m src.agent_a2a`
+  - Run agent (A2A, search only): `poetry run python -m src.agent_a2a --tools search --port 9001 --buyer-url http://localhost:8000`
+  - Run client: `poetry run python -m src.client`
+- `buyer-simple-agent/` - Data buying agent with A2A marketplace and web frontend
+  - Install: `poetry install` (backend), `cd frontend && npm install` (frontend)
+  - Run CLI agent (A2A default): `poetry run python -m src.agent`
+  - Run CLI agent (HTTP mode): `poetry run python -m src.agent --mode http`
+  - Run web server: `poetry run python -m src.web`
+  - Run frontend dev: `cd frontend && npm run dev` (opens http://localhost:5173)
+  - Run client (A2A): `poetry run python -m src.client_a2a`
+  - **Note:** Use `poetry run python -m src.<module>` (not `poetry run agent`) because `package-mode = false`
+  - Demo scripts: `demo-scripts/demo-cli.md`, `demo-scripts/demo-frontend.md`
 
 ---
 
