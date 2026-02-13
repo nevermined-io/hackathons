@@ -49,6 +49,7 @@ from payments_py import Payments, PaymentOptions
 from payments_py.a2a.agent_card import build_payment_agent_card
 from payments_py.a2a.server import PaymentsA2AServer
 
+from .log import get_logger, log
 from .strands_agent_plain import ALL_TOOLS, create_plain_agent, resolve_tools
 
 load_dotenv()
@@ -58,10 +59,11 @@ NVM_ENVIRONMENT = os.getenv("NVM_ENVIRONMENT", "sandbox")
 NVM_PLAN_ID = os.environ["NVM_PLAN_ID"]
 NVM_AGENT_ID = os.getenv("NVM_AGENT_ID", "")
 
+_logger = get_logger("seller")
+
 if not NVM_AGENT_ID:
-    print("ERROR: NVM_AGENT_ID is required for A2A mode.")
-    print("Set it in your .env file. You can find it in the Nevermined App")
-    print("under your agent's settings, or use the Plan ID as a fallback.")
+    log(_logger, "SERVER", "ERROR", "NVM_AGENT_ID is required for A2A mode. "
+        "Set it in your .env file (find it in the Nevermined App agent settings).")
     sys.exit(1)
 
 payments = Payments.get_instance(
@@ -131,6 +133,7 @@ class StrandsA2AExecutor(AgentExecutor):
     def __init__(self, agent: Agent, credit_map: dict[str, int] | None = None):
         self._agent = agent
         self._credit_map = credit_map or {}
+        self._log = get_logger("seller.executor")
 
     async def execute(self, context, event_queue: EventQueue) -> None:
         task_id = context.task_id or str(uuid4())
@@ -159,6 +162,8 @@ class StrandsA2AExecutor(AgentExecutor):
 
         # Extract user text from A2A message
         user_text = self._extract_user_text(context) or "Hello"
+        log(self._log, "EXECUTOR", "RECEIVED",
+            f'query="{user_text[:80]}" task={task_id[:8]}')
 
         # Run the Strands agent
         # Snapshot message count so we only count credits from this request
@@ -167,6 +172,7 @@ class StrandsA2AExecutor(AgentExecutor):
             result = await asyncio.to_thread(self._agent, user_text)
             response_text = str(result)
         except Exception as exc:
+            log(self._log, "EXECUTOR", "FAILED", str(exc))
             await event_queue.enqueue_event(
                 _make_status_event(
                     task_id, context_id, TaskState.failed,
@@ -176,6 +182,8 @@ class StrandsA2AExecutor(AgentExecutor):
             return
 
         credits_used = self._calculate_credits(self._agent.messages[msg_offset:])
+        log(self._log, "EXECUTOR", "COMPLETED",
+            f"credits_used={credits_used} response={len(response_text)} chars")
 
         await event_queue.enqueue_event(
             _make_status_event(
@@ -211,7 +219,11 @@ class StrandsA2AExecutor(AgentExecutor):
                 continue
             for block in msg.get("content", []):
                 if isinstance(block, dict) and block.get("type") == "tool_use":
-                    total += self._credit_map.get(block.get("name", ""), 1)
+                    name = block.get("name", "")
+                    credits = self._credit_map.get(name, 1)
+                    log(self._log, "EXECUTOR", "TOOL_USE",
+                        f"{name} ({credits} cr)")
+                    total += credits
         return total or 1  # minimum 1 credit per request
 
 
@@ -240,19 +252,27 @@ def _register_with_buyer(buyer_url: str, agent_url: str):
         },
     }
 
+    _reg_log = get_logger("seller.register")
+    log(_reg_log, "REGISTER", "SENDING",
+        f"buyer={buyer_url} self={agent_url}")
+
     for attempt in range(1, 4):
         try:
             with httpx.Client(timeout=10.0) as client:
                 resp = client.post(buyer_url, json=payload)
             if resp.status_code == 200:
-                print(f"\nRegistered with buyer at {buyer_url}")
+                log(_reg_log, "REGISTER", "SUCCESS",
+                    f"registered with {buyer_url}")
                 return
-            print(f"\nRegistration attempt {attempt}: HTTP {resp.status_code}")
+            log(_reg_log, "REGISTER", "FAILED",
+                f"attempt {attempt}: HTTP {resp.status_code}")
         except Exception as exc:
-            print(f"\nRegistration attempt {attempt} failed: {exc}")
+            log(_reg_log, "REGISTER", "FAILED",
+                f"attempt {attempt}: {exc}")
         time.sleep(2)
 
-    print("\nWARNING: Could not register with buyer after 3 attempts.")
+    log(_reg_log, "REGISTER", "ERROR",
+        "could not register with buyer after 3 attempts")
 
 
 # ---------------------------------------------------------------------------
@@ -333,21 +353,19 @@ def main():
     executor = StrandsA2AExecutor(agent, credit_map)
 
     tool_label = ", ".join(tool_names) if tool_names else "all"
-    print("=" * 60)
-    print("Data Selling Agent — A2A Mode")
-    print("=" * 60)
-    print(f"\nAgent card:  http://localhost:{port}/.well-known/agent.json")
-    print(f"JSON-RPC:    http://localhost:{port}/")
-    print(f"Plan ID:     {NVM_PLAN_ID}")
-    print(f"Agent ID:    {NVM_AGENT_ID}")
-    print(f"Environment: {NVM_ENVIRONMENT}")
-    print(f"Tools:       {tool_label}")
-    print(f"Pricing:     {cost_description}")
+    log(_logger, "SERVER", "STARTUP",
+        f"Data Selling Agent — A2A Mode on port {port}")
+    log(_logger, "SERVER", "STARTUP",
+        f"card=http://localhost:{port}/.well-known/agent.json")
+    log(_logger, "SERVER", "STARTUP",
+        f"plan={NVM_PLAN_ID} agent={NVM_AGENT_ID} env={NVM_ENVIRONMENT}")
+    log(_logger, "SERVER", "STARTUP",
+        f"tools=[{tool_label}] pricing={cost_description}")
 
     # Self-register with buyer if buyer URL provided
     if buyer_url:
         agent_url = f"http://localhost:{port}"
-        print(f"Registering: {buyer_url}")
+        log(_logger, "SERVER", "STARTUP", f"will register with buyer at {buyer_url}")
         thread = threading.Thread(
             target=_register_with_buyer,
             args=(buyer_url, agent_url),
@@ -355,11 +373,30 @@ def main():
         )
         thread.start()
 
+    # Payment lifecycle hooks for logging
+    async def _before_request(method, params, request):
+        token = request.headers.get("payment-signature", "")[:16]
+        log(_logger, "PAYMENT", "VERIFY", f"method={method} token={token}...")
+
+    async def _after_request(method, response, request):
+        status = getattr(response, "status_code", "ok")
+        log(_logger, "PAYMENT", "VERIFIED", f"method={method} status={status}")
+
+    async def _on_error(method, exc, request):
+        log(_logger, "PAYMENT", "ERROR", f"method={method} error={exc}")
+
+    hooks = {
+        "beforeRequest": _before_request,
+        "afterRequest": _after_request,
+        "onError": _on_error,
+    }
+
     result = PaymentsA2AServer.start(
         agent_card=agent_card,
         executor=executor,
         payments_service=payments,
         port=port,
+        hooks=hooks,
     )
 
     asyncio.run(result.server.serve())

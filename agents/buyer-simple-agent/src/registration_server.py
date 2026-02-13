@@ -38,11 +38,15 @@ from a2a.types import (
     TaskStatusUpdateEvent,
 )
 
+from .log import get_logger, log
 from .registry import SellerRegistry
 
 
 def _now_iso() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+_logger = get_logger("buyer.registry")
 
 
 class RegistrationExecutor(AgentExecutor):
@@ -75,18 +79,24 @@ class RegistrationExecutor(AgentExecutor):
         # Extract agent URL from the message text
         agent_url = self._extract_text(context).strip()
         if not agent_url:
+            log(_logger, "REGISTRY", "ERROR", "no agent URL provided")
             await self._respond(
                 event_queue, task_id, context_id,
                 TaskState.failed, "No agent URL provided.",
             )
             return
 
+        log(_logger, "REGISTRY", "RECEIVED", f"agent_url={agent_url}")
+
         # Fetch the seller's agent card
         card_url = f"{agent_url.rstrip('/')}/.well-known/agent.json"
+        log(_logger, "REGISTRY", "FETCHING", f"card_url={card_url}")
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(card_url)
             if resp.status_code != 200:
+                log(_logger, "REGISTRY", "ERROR",
+                    f"fetch agent card: HTTP {resp.status_code}")
                 await self._respond(
                     event_queue, task_id, context_id,
                     TaskState.failed,
@@ -95,6 +105,7 @@ class RegistrationExecutor(AgentExecutor):
                 return
             agent_card = resp.json()
         except Exception as exc:
+            log(_logger, "REGISTRY", "ERROR", f"fetch agent card: {exc}")
             await self._respond(
                 event_queue, task_id, context_id,
                 TaskState.failed, f"Error fetching agent card: {exc}",
@@ -104,6 +115,8 @@ class RegistrationExecutor(AgentExecutor):
         # Register the seller
         info = self._registry.register(agent_url, agent_card)
         skill_names = [s.get("name", s.get("id", "?")) for s in info.skills]
+        log(_logger, "REGISTRY", "REGISTERED",
+            f"name={info.name} skills={skill_names} url={info.url}")
         text = (
             f"Registered seller '{info.name}' at {info.url} "
             f"with skills: {', '.join(skill_names)}"

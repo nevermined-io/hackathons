@@ -17,6 +17,7 @@ from strands import Agent, tool
 from payments_py import Payments, PaymentOptions
 
 from .budget import Budget
+from .log import get_logger, log
 from .registry import SellerRegistry
 from .tools.balance import check_balance_impl
 from .tools.discover import discover_pricing_impl
@@ -42,6 +43,8 @@ payments = Payments.get_instance(
 )
 
 budget = Budget(max_daily=MAX_DAILY_SPEND, max_per_request=MAX_PER_REQUEST)
+
+_logger = get_logger("buyer.tools")
 
 # Shared seller registry — used by tools and registration server
 seller_registry = SellerRegistry()
@@ -71,6 +74,7 @@ def check_balance() -> dict:
     Returns your remaining credits on the seller's plan and your
     local spending budget status.
     """
+    log(_logger, "TOOLS", "BALANCE", f"plan={NVM_PLAN_ID[:12]}")
     result = check_balance_impl(payments, NVM_PLAN_ID)
     budget_status = budget.get_status()
     result["budget"] = budget_status
@@ -138,6 +142,7 @@ def list_sellers() -> dict:
     You can also register sellers manually with discover_agent.
     """
     sellers = seller_registry.list_all()
+    log(_logger, "TOOLS", "LIST_SELLERS", f"count={len(sellers)}")
     if not sellers:
         return {
             "status": "success",
@@ -175,7 +180,12 @@ def discover_agent(agent_url: str = "") -> dict:
         agent_url: Base URL of the A2A agent (defaults to SELLER_A2A_URL env var).
     """
     url = agent_url or SELLER_A2A_URL
+    log(_logger, "TOOLS", "DISCOVER", f"url={url}")
     result = discover_agent_impl(url)
+
+    if result.get("status") == "success":
+        log(_logger, "TOOLS", "DISCOVER",
+            f'found name={result.get("name", "?")} skills={len(result.get("skills", []))}')
 
     # Also register in the seller registry if discovery succeeded
     if result.get("status") == "success":
@@ -219,9 +229,13 @@ def purchase_a2a(query: str, agent_url: str = "") -> dict:
             "credits_used": 0,
         }
 
+    log(_logger, "TOOLS", "PURCHASE", f'url={url} query="{query[:60]}"')
+
     # Check registry for cached payment info (skip discovery round-trip)
     cached = seller_registry.get_payment_info(url)
     if cached:
+        log(_logger, "TOOLS", "PURCHASE",
+            f'using cached payment info plan={cached["planId"][:12]}')
         plan_id = cached["planId"] or NVM_PLAN_ID
         agent_id = cached["agentId"] or NVM_AGENT_ID or ""
         min_credits = cached["credits"]
@@ -264,6 +278,8 @@ def purchase_a2a(query: str, agent_url: str = "") -> dict:
     )
 
     credits_used = result.get("credits_used", 0)
+    log(_logger, "TOOLS", "PURCHASE",
+        f'status={result.get("status")} credits={credits_used}')
     if result.get("status") == "success" and credits_used > 0:
         budget.record_purchase(credits_used, url, query)
 

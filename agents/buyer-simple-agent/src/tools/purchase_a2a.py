@@ -8,6 +8,8 @@ from a2a.types import MessageSendParams, Message, TextPart
 from payments_py import Payments
 from payments_py.a2a.payments_client import PaymentsClient
 
+from ..log import get_logger, log
+
 
 def _error(message: str) -> dict:
     """Build a standard error response."""
@@ -22,6 +24,9 @@ def _success(text: str, credits_used: int = 0) -> dict:
         "response": text,
         "credits_used": credits_used,
     }
+
+
+_logger = get_logger("buyer.a2a_client")
 
 
 def purchase_a2a_impl(
@@ -47,6 +52,8 @@ def purchase_a2a_impl(
     Returns:
         dict with status, content (for Strands), response text, and credits_used.
     """
+    log(_logger, "A2A_CLIENT", "CONNECT",
+        f"url={agent_url} plan={plan_id[:12]} agent={agent_id[:12]}")
     try:
         client = PaymentsClient(
             agent_base_url=agent_url,
@@ -54,6 +61,8 @@ def purchase_a2a_impl(
             agent_id=agent_id,
             plan_id=plan_id,
         )
+
+        log(_logger, "A2A_CLIENT", "TOKEN", "generating x402 access token")
 
         params = MessageSendParams(
             message=Message(
@@ -63,12 +72,21 @@ def purchase_a2a_impl(
             )
         )
 
+        log(_logger, "A2A_CLIENT", "SENDING", f'query="{query[:60]}"')
         events = asyncio.run(_collect_stream(client, params))
-        return _extract_from_events(events)
+        result = _extract_from_events(events)
+
+        log(_logger, "A2A_CLIENT", "COMPLETED",
+            f'credits_used={result.get("credits_used", 0)} '
+            f'response={len(result.get("response", result.get("content", [{}])[0].get("text", "")))} chars')
+        return result
 
     except (ConnectionError, OSError):
+        log(_logger, "A2A_CLIENT", "ERROR",
+            f"cannot connect to agent at {agent_url}")
         return _error(f"Cannot connect to agent at {agent_url}. Is it running?")
     except Exception as e:
+        log(_logger, "A2A_CLIENT", "ERROR", f"purchase failed: {e}")
         return _error(f"A2A purchase failed: {e}")
 
 
@@ -126,6 +144,9 @@ def _extract_from_events(events: list) -> dict:
 
         state = status.state
         state_val = state.value if hasattr(state, "value") else str(state)
+
+        if state_val == "completed" or state_val == "failed":
+            log(_logger, "A2A_CLIENT", "EVENT", f"state={state_val}")
 
         if state_val == "completed":
             message = getattr(status, "message", None)
