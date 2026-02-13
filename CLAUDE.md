@@ -294,13 +294,15 @@ Each subfolder under `agents/` is an independent agent project with its own `pyp
   - Run demo: `poetry run python demo.py`
 - `seller-simple-agent/` - Data selling agent with tiered pricing (1, 5, 10 credits)
   - Install: `poetry install`
-  - Run agent: `poetry run agent`
+  - Run agent (HTTP): `poetry run agent`
+  - Run agent (A2A): `poetry run agent-a2a`
   - Run client: `poetry run client`
   - Run demo: `poetry run demo`
 - `buyer-simple-agent/` - Data buying agent with x402 payment and budget management
   - Install: `poetry install`
   - Run agent: `poetry run agent`
-  - Run client: `poetry run client`
+  - Run client (HTTP): `poetry run client`
+  - Run client (A2A): `poetry run client-a2a`
   - Run demo: `poetry run demo`
 
 ---

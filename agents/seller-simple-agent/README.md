@@ -212,6 +212,43 @@ def research_data(query: str, tool_context=None) -> dict:
     return {"status": "success", "content": [{"text": f"Research report: {query}"}]}
 ```
 
+## A2A Mode
+
+Run the seller as an A2A-compliant agent with standard agent card discovery and payment-protected JSON-RPC messaging.
+
+### Start in A2A Mode
+
+```bash
+poetry run agent-a2a   # Starts A2A server on http://localhost:9000
+```
+
+### Agent Card
+
+The agent card is served at `/.well-known/agent.json` and includes a `urn:nevermined:payment` extension with plan ID, agent ID, and pricing info.
+
+```bash
+curl -s http://localhost:9000/.well-known/agent.json | python3 -m json.tool
+```
+
+### How A2A Differs from HTTP Mode
+
+| Aspect | HTTP Mode (`poetry run agent`) | A2A Mode (`poetry run agent-a2a`) |
+|--------|-------------------------------|----------------------------------|
+| Discovery | `GET /pricing` (custom) | `/.well-known/agent.json` (standard) |
+| Communication | REST `POST /data` | A2A JSON-RPC messages |
+| Payment handling | `@requires_payment` per tool | `PaymentsRequestHandler` per request |
+| Token transport | `payment-signature` header | `payment-signature` header |
+| Port | 3000 | 9000 |
+| Interoperability | Custom protocol | Any A2A-compatible agent |
+
+### Configuration
+
+Add to your `.env`:
+
+```bash
+A2A_PORT=9000  # Default: 9000
+```
+
 ## Customization Ideas
 
 1. **Swap data sources** — Integrate Exa, Tavily, Apify, or your own APIs
