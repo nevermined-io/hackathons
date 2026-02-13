@@ -173,6 +173,8 @@ def _build_buyer_agent_card(port: int) -> AgentCard:
         url=f"http://localhost:{port}",
         version="0.1.0",
         skills=[],
+        defaultInputModes=["text"],
+        defaultOutputModes=["text"],
         capabilities=AgentCapabilities(streaming=True, pushNotifications=False),
     )
 
@@ -205,7 +207,7 @@ def start_registration_server(registry: SellerRegistry, port: int = 8000) -> Non
             agent_card=agent_card,
             http_handler=handler,
         )
-        a2a_app.mount(app)
+        a2a_app.add_routes_to_app(app)
 
         uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
 
