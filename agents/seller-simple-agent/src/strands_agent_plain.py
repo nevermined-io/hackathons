@@ -8,9 +8,10 @@ the @requires_payment decorator.
 The tool functions delegate to the same implementations in tools/.
 
 Usage:
-    from src.strands_agent_plain import create_plain_agent, CREDIT_MAP
+    from src.strands_agent_plain import create_plain_agent, CREDIT_MAP, resolve_tools
 """
 
+from a2a.types import AgentSkill
 from strands import Agent, tool
 
 from .tools.market_research import research_market_impl
@@ -55,12 +56,71 @@ def research_data(query: str, depth: str = "standard") -> dict:
     return research_market_impl(query, depth)
 
 
-# Credit cost per tool — used by the executor to report creditsUsed
-CREDIT_MAP = {
-    "search_data": 1,
-    "summarize_data": 5,
-    "research_data": 10,
+# ---------------------------------------------------------------------------
+# ALL_TOOLS registry — maps short names to (tool_fn, credits, AgentSkill)
+# ---------------------------------------------------------------------------
+
+ALL_TOOLS = {
+    "search": {
+        "tool": search_data,
+        "credits": 1,
+        "skill": AgentSkill(
+            id="search_data",
+            name="Web Search",
+            description="Search the web for data. Costs 1 credit per request.",
+            tags=["search", "data", "web"],
+        ),
+    },
+    "summarize": {
+        "tool": summarize_data,
+        "credits": 5,
+        "skill": AgentSkill(
+            id="summarize_data",
+            name="Content Summarization",
+            description="Summarize content with LLM-powered analysis. Costs 5 credits.",
+            tags=["summarize", "analysis", "llm"],
+        ),
+    },
+    "research": {
+        "tool": research_data,
+        "credits": 10,
+        "skill": AgentSkill(
+            id="research_data",
+            name="Market Research",
+            description="Full market research with multi-source report. Costs 10 credits.",
+            tags=["research", "market", "report"],
+        ),
+    },
 }
+
+
+def resolve_tools(tool_names: list[str] | None = None):
+    """Resolve tool short names to (tools, credit_map, skills).
+
+    Args:
+        tool_names: List of short names (e.g. ["search", "summarize"]).
+                    None or empty means all tools.
+
+    Returns:
+        Tuple of (tools_list, credit_map_dict, skills_list).
+    """
+    names = tool_names if tool_names else list(ALL_TOOLS.keys())
+    tools = []
+    credit_map = {}
+    skills = []
+    for name in names:
+        entry = ALL_TOOLS[name]
+        fn = entry["tool"]
+        tools.append(fn)
+        credit_map[fn.__name__] = entry["credits"]
+        skills.append(entry["skill"])
+    return tools, credit_map, skills
+
+
+# Module-level defaults (backward compatibility)
+CREDIT_MAP = {fn.__name__: e["credits"] for fn, e in
+               ((ALL_TOOLS[n]["tool"], ALL_TOOLS[n]) for n in ALL_TOOLS)}
+TOOLS = [ALL_TOOLS[n]["tool"] for n in ALL_TOOLS]
 
 # ---------------------------------------------------------------------------
 # Agent factory
@@ -81,20 +141,43 @@ summarize_data. For in-depth research, use research_data.
 
 Always be helpful and explain what data you found."""
 
-TOOLS = [search_data, summarize_data, research_data]
+
+def _build_system_prompt(tools_list):
+    """Build a system prompt that only mentions the available tools."""
+    tool_names = {t.__name__ for t in tools_list}
+    lines = ["You are a data selling agent. You provide data services:\n"]
+    if "search_data" in tool_names:
+        lines.append("- **search_data** (1 credit) - Basic web search for quick lookups.")
+    if "summarize_data" in tool_names:
+        lines.append("- **summarize_data** (5 credits) - LLM-powered content summarization.")
+    if "research_data" in tool_names:
+        lines.append("- **research_data** (10 credits) - Full market research report.")
+    lines.append(
+        "\nChoose the appropriate tool based on the user's request complexity. "
+        "Always be helpful and explain what data you found."
+    )
+    return "\n".join(lines)
 
 
-def create_plain_agent(model) -> Agent:
+def create_plain_agent(model, tool_names: list[str] | None = None) -> Agent:
     """Create a Strands agent with plain (non-payment) tools.
 
     Args:
         model: A Strands-compatible model (OpenAIModel, BedrockModel, etc.)
+        tool_names: Optional list of tool short names to include.
+                    None means all tools.
 
     Returns:
         Configured Strands Agent with plain tools for A2A mode.
     """
+    if tool_names:
+        tools, _, _ = resolve_tools(tool_names)
+        prompt = _build_system_prompt(tools)
+    else:
+        tools = TOOLS
+        prompt = SYSTEM_PROMPT
     return Agent(
         model=model,
-        tools=TOOLS,
-        system_prompt=SYSTEM_PROMPT,
+        tools=tools,
+        system_prompt=prompt,
     )
