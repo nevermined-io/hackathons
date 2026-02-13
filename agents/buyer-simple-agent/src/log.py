@@ -13,8 +13,10 @@ Colors by semantics (ANSI escape codes, no dependencies):
 - Dim: timestamps
 """
 
+import asyncio
 import logging
 import sys
+from datetime import datetime
 
 # ANSI escape codes
 RESET = "\033[0m"
@@ -56,6 +58,42 @@ ACTION_COLORS = {
 }
 
 
+_web_log_queue: asyncio.Queue | None = None
+
+
+class WebLogHandler(logging.Handler):
+    """Push structured log dicts to an asyncio.Queue for SSE streaming."""
+
+    def __init__(self, queue: asyncio.Queue):
+        super().__init__()
+        self._queue = queue
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            entry = {
+                "timestamp": datetime.fromtimestamp(record.created).strftime("%H:%M:%S"),
+                "component": getattr(record, "component", "AGENT"),
+                "action": getattr(record, "action", "INFO"),
+                "message": record.getMessage(),
+            }
+            self._queue.put_nowait(entry)
+        except Exception:
+            pass
+
+
+def enable_web_logging(queue: asyncio.Queue) -> None:
+    """Enable web log streaming by attaching WebLogHandler to all buyer loggers."""
+    global _web_log_queue
+    _web_log_queue = queue
+    handler = WebLogHandler(queue)
+    # Retroactively attach to all existing buyer.* loggers
+    for name, logger in logging.Logger.manager.loggerDict.items():
+        if isinstance(logger, logging.Logger) and name.startswith("buyer."):
+            # Avoid duplicate handlers
+            if not any(isinstance(h, WebLogHandler) for h in logger.handlers):
+                logger.addHandler(handler)
+
+
 class AgentFormatter(logging.Formatter):
     """Format log records as structured, colored table rows."""
 
@@ -90,6 +128,10 @@ def get_logger(name: str) -> logging.Logger:
         logger.addHandler(handler)
         logger.setLevel(logging.DEBUG)
         logger.propagate = False
+        # Attach web handler if enabled
+        if _web_log_queue is not None:
+            web_handler = WebLogHandler(_web_log_queue)
+            logger.addHandler(web_handler)
     return logger
 
 
