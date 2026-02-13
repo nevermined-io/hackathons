@@ -6,7 +6,7 @@ agent_agentcore.py (AWS) import from here. The tools are plain @tool —
 NOT @requires_payment — because the buyer generates tokens, not receives them.
 
 Usage:
-    from src.strands_agent import payments, create_agent, NVM_PLAN_ID
+    from src.strands_agent import payments, create_agent, NVM_PLAN_ID, seller_registry
 """
 
 import os
@@ -17,6 +17,8 @@ from strands import Agent, tool
 from payments_py import Payments, PaymentOptions
 
 from .budget import Budget
+from .log import get_logger, log
+from .registry import SellerRegistry
 from .tools.balance import check_balance_impl
 from .tools.discover import discover_pricing_impl
 from .tools.discover_a2a import discover_agent_impl
@@ -41,6 +43,11 @@ payments = Payments.get_instance(
 )
 
 budget = Budget(max_daily=MAX_DAILY_SPEND, max_per_request=MAX_PER_REQUEST)
+
+_logger = get_logger("buyer.tools")
+
+# Shared seller registry — used by tools and registration server
+seller_registry = SellerRegistry()
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +74,7 @@ def check_balance() -> dict:
     Returns your remaining credits on the seller's plan and your
     local spending budget status.
     """
+    log(_logger, "TOOLS", "BALANCE", f"plan={NVM_PLAN_ID[:12]}")
     result = check_balance_impl(payments, NVM_PLAN_ID)
     budget_status = budget.get_status()
     result["budget"] = budget_status
@@ -127,17 +135,70 @@ def purchase_data(query: str, seller_url: str = "") -> dict:
 # ---------------------------------------------------------------------------
 
 @tool
+def list_sellers() -> dict:
+    """List all registered sellers, their skills, and pricing.
+
+    Sellers register automatically via A2A when they start with --buyer-url.
+    You can also register sellers manually with discover_agent.
+    """
+    sellers = seller_registry.list_all()
+    log(_logger, "TOOLS", "LIST_SELLERS", f"count={len(sellers)}")
+    if not sellers:
+        return {
+            "status": "success",
+            "content": [{"text": "No sellers registered yet. "
+                         "Sellers will appear here when they start with --buyer-url, "
+                         "or you can discover one manually with discover_agent."}],
+            "sellers": [],
+        }
+
+    lines = [f"Registered sellers ({len(sellers)}):"]
+    for s in sellers:
+        skills_str = ", ".join(s["skills"]) if s["skills"] else "none"
+        lines.append(f"\n  {s['name']} ({s['url']})")
+        lines.append(f"    Skills: {skills_str}")
+        lines.append(f"    Min credits: {s['credits']}")
+        if s["cost_description"]:
+            lines.append(f"    Pricing: {s['cost_description']}")
+
+    return {
+        "status": "success",
+        "content": [{"text": "\n".join(lines)}],
+        "sellers": sellers,
+    }
+
+
+@tool
 def discover_agent(agent_url: str = "") -> dict:
     """Discover a seller via A2A protocol by fetching its agent card.
 
     Retrieves /.well-known/agent.json from the seller and parses
     the payment extension to find plan ID, agent ID, and pricing.
+    Also registers the seller in the local registry.
 
     Args:
         agent_url: Base URL of the A2A agent (defaults to SELLER_A2A_URL env var).
     """
     url = agent_url or SELLER_A2A_URL
-    return discover_agent_impl(url)
+    log(_logger, "TOOLS", "DISCOVER", f"url={url}")
+    result = discover_agent_impl(url)
+
+    if result.get("status") == "success":
+        log(_logger, "TOOLS", "DISCOVER",
+            f'found name={result.get("name", "?")} skills={len(result.get("skills", []))}')
+
+        # Also register in the seller registry (best-effort)
+        import httpx
+        try:
+            card_url = f"{url.rstrip('/')}/.well-known/agent.json"
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.get(card_url)
+            if resp.status_code == 200:
+                seller_registry.register(url, resp.json())
+        except Exception:
+            pass
+
+    return result
 
 
 @tool
@@ -147,24 +208,49 @@ def purchase_a2a(query: str, agent_url: str = "") -> dict:
     Sends an A2A message with automatic x402 payment via PaymentsClient.
     The agent card's payment extension provides the plan ID and agent ID.
 
+    If no agent_url is provided, uses the first registered seller from the
+    registry, or falls back to SELLER_A2A_URL.
+
     Args:
         query: The data query to send to the seller.
-        agent_url: Base URL of the A2A agent (defaults to SELLER_A2A_URL env var).
+        agent_url: Base URL of the A2A agent (optional if sellers are registered).
     """
     url = agent_url or SELLER_A2A_URL
 
-    # First discover the agent to get payment info
-    discovery = discover_agent_impl(url)
-    if discovery.get("status") != "success":
+    # If no URL specified, try the registry
+    if not url:
+        url = seller_registry.get_first_url()
+    if not url:
         return {
             "status": "error",
-            "content": [{"text": f"Cannot discover agent at {url}. Is it running?"}],
+            "content": [{"text": "No seller URL provided and no sellers registered. "
+                         "Use list_sellers to check, or provide an agent_url."}],
             "credits_used": 0,
         }
 
-    payment = discovery.get("payment", {})
-    plan_id = payment.get("planId", NVM_PLAN_ID)
-    agent_id = payment.get("agentId", NVM_AGENT_ID or "")
+    log(_logger, "TOOLS", "PURCHASE", f'url={url} query="{query[:60]}"')
+
+    # Check registry for cached payment info (skip discovery round-trip)
+    cached = seller_registry.get_payment_info(url)
+    if cached:
+        log(_logger, "TOOLS", "PURCHASE",
+            f'using cached payment info plan={cached["planId"][:12]}')
+        plan_id = cached["planId"] or NVM_PLAN_ID
+        agent_id = cached["agentId"] or NVM_AGENT_ID or ""
+        min_credits = cached["credits"]
+    else:
+        # Fall back to full discovery
+        discovery = discover_agent_impl(url)
+        if discovery.get("status") != "success":
+            return {
+                "status": "error",
+                "content": [{"text": f"Cannot discover agent at {url}. Is it running?"}],
+                "credits_used": 0,
+            }
+        payment = discovery.get("payment", {})
+        plan_id = payment.get("planId", NVM_PLAN_ID)
+        agent_id = payment.get("agentId", NVM_AGENT_ID or "")
+        min_credits = payment.get("credits", 1)
 
     if not plan_id:
         return {
@@ -174,7 +260,6 @@ def purchase_a2a(query: str, agent_url: str = "") -> dict:
         }
 
     # Budget pre-check
-    min_credits = payment.get("credits", 1)
     allowed, reason = budget.can_spend(min_credits)
     if not allowed:
         return {
@@ -192,6 +277,8 @@ def purchase_a2a(query: str, agent_url: str = "") -> dict:
     )
 
     credits_used = result.get("credits_used", 0)
+    log(_logger, "TOOLS", "PURCHASE",
+        f'status={result.get("status")} credits={credits_used}')
     if result.get("status") == "success" and credits_used > 0:
         budget.record_purchase(credits_used, url, query)
 
@@ -216,11 +303,14 @@ _A2A_PROMPT = """\
 You are a data buying agent. You help users discover and purchase data from \
 sellers using the A2A (Agent-to-Agent) protocol with Nevermined payments.
 
+Sellers register with you automatically when they start. Use list_sellers \
+to see available sellers, their skills, and pricing.
+
 Your workflow:
-1. **discover_agent** — Fetch the seller's agent card (/.well-known/agent.json) \
-to see skills and payment requirements.
-2. **check_balance** — Check your credit balance and budget.
-3. **purchase_a2a** — Send an A2A message with automatic payment.
+1. **list_sellers** — See all registered sellers and their capabilities.
+2. **discover_agent** — Manually discover a seller by URL (also registers it).
+3. **check_balance** — Check your credit balance and budget.
+4. **purchase_a2a** — Send an A2A message with automatic payment.
 """ + _GUIDELINES
 
 _HTTP_PROMPT = """\
@@ -233,7 +323,7 @@ Your workflow:
 3. **purchase_data** — Buy data by sending an x402-protected HTTP request.
 """ + _GUIDELINES
 
-_A2A_TOOLS = [discover_agent, check_balance, purchase_a2a]
+_A2A_TOOLS = [list_sellers, discover_agent, check_balance, purchase_a2a]
 _HTTP_TOOLS = [discover_pricing, check_balance, purchase_data]
 
 SYSTEM_PROMPT = _A2A_PROMPT if A2A_MODE else _HTTP_PROMPT

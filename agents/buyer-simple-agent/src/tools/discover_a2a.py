@@ -2,6 +2,11 @@
 
 import httpx
 
+from ..log import get_logger, log
+
+
+_logger = get_logger("buyer.discovery")
+
 
 def discover_agent_impl(agent_url: str) -> dict:
     """Fetch an A2A agent card and parse payment extension.
@@ -14,12 +19,15 @@ def discover_agent_impl(agent_url: str) -> dict:
     """
     url = agent_url.rstrip("/")
     card_url = f"{url}/.well-known/agent.json"
+    log(_logger, "DISCOVERY", "FETCHING", f"url={card_url}")
 
     try:
         with httpx.Client(timeout=15.0) as client:
             response = client.get(card_url)
 
         if response.status_code != 200:
+            log(_logger, "DISCOVERY", "ERROR",
+                f"HTTP {response.status_code} from {card_url}")
             return {
                 "status": "error",
                 "content": [{"text": (
@@ -44,6 +52,8 @@ def discover_agent_impl(agent_url: str) -> dict:
                 payment_ext = ext.get("params", {})
                 break
 
+        payment_type = payment_ext.get("paymentType", "unknown") if payment_ext else "free"
+
         # Build readable output
         lines = [
             f"Agent: {name}",
@@ -59,20 +69,14 @@ def discover_agent_impl(agent_url: str) -> dict:
             lines.append(f"  - {skill_name}: {skill_desc}")
 
         if payment_ext:
-            plan_id = payment_ext.get("planId", "")
-            agent_id = payment_ext.get("agentId", "")
-            credits = payment_ext.get("credits", 0)
-            payment_type = payment_ext.get("paymentType", "unknown")
-            cost_desc = payment_ext.get("costDescription", "")
-
             lines.extend([
                 "",
                 "Payment:",
-                f"  Plan ID: {plan_id}",
-                f"  Agent ID: {agent_id}",
-                f"  Min credits: {credits}",
+                f"  Plan ID: {payment_ext.get('planId', '')}",
+                f"  Agent ID: {payment_ext.get('agentId', '')}",
+                f"  Min credits: {payment_ext.get('credits', 0)}",
                 f"  Payment type: {payment_type}",
-                f"  Cost info: {cost_desc}",
+                f"  Cost info: {payment_ext.get('costDescription', '')}",
             ])
         else:
             lines.extend(["", "Payment: No payment extension found (free agent)"])
@@ -88,14 +92,19 @@ def discover_agent_impl(agent_url: str) -> dict:
         if payment_ext:
             result["payment"] = payment_ext
 
+        log(_logger, "DISCOVERY", "FOUND",
+            f"name={name} skills={len(skills)} payment={payment_type}")
         return result
 
     except httpx.ConnectError:
+        log(_logger, "DISCOVERY", "ERROR",
+            f"cannot connect to {card_url}")
         return {
             "status": "error",
             "content": [{"text": f"Cannot connect to agent at {card_url}. Is it running?"}],
         }
     except Exception as e:
+        log(_logger, "DISCOVERY", "ERROR", f"failed: {e}")
         return {
             "status": "error",
             "content": [{"text": f"Failed to discover agent: {e}"}],

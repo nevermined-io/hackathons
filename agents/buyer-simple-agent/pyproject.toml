@@ -11,6 +11,8 @@ payments-py = {version = ">=1.2.0", extras = ["a2a"]}
 httpx = "^0.28.0"
 openai = "^1.40.0"
 python-dotenv = "^1.0.0"
+fastapi = "^0.120.0"
+uvicorn = ">=0.34.2,<1.0.0"
 
 [tool.poetry.extras]
 agentcore = ["bedrock-agentcore"]
