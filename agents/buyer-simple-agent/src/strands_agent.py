@@ -30,7 +30,8 @@ NVM_ENVIRONMENT = os.getenv("NVM_ENVIRONMENT", "sandbox")
 NVM_PLAN_ID = os.environ["NVM_PLAN_ID"]
 NVM_AGENT_ID = os.getenv("NVM_AGENT_ID")
 SELLER_URL = os.getenv("SELLER_URL", "http://localhost:3000")
-SELLER_A2A_URL = os.getenv("SELLER_A2A_URL", "http://localhost:9000")
+SELLER_A2A_URL = os.getenv("SELLER_A2A_URL", "")
+A2A_MODE = bool(SELLER_A2A_URL)
 
 MAX_DAILY_SPEND = int(os.getenv("MAX_DAILY_SPEND", "0"))
 MAX_PER_REQUEST = int(os.getenv("MAX_PER_REQUEST", "0"))
@@ -201,22 +202,7 @@ def purchase_a2a(query: str, agent_url: str = "") -> dict:
 # Agent factory
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """\
-You are a data buying agent. You help users discover and purchase data from \
-sellers using the Nevermined payment protocols.
-
-You support two modes:
-
-**HTTP mode (x402):**
-1. **discover_pricing** — Call this first to see what the seller offers via HTTP.
-2. **check_balance** — Check your credit balance and budget before purchasing.
-3. **purchase_data** — Buy data by sending an x402-protected HTTP request.
-
-**A2A mode (Agent-to-Agent protocol):**
-1. **discover_agent** — Fetch the seller's agent card (/.well-known/agent.json) \
-to see skills and payment requirements.
-2. **check_balance** — Check your credit balance and budget.
-3. **purchase_a2a** — Send an A2A message with automatic payment.
+_GUIDELINES = """\
 
 Important guidelines:
 - Always discover the seller first so you can inform the user about costs.
@@ -224,11 +210,34 @@ Important guidelines:
 - Tell the user the expected cost BEFORE purchasing and confirm they want to proceed.
 - After a purchase, report what was received and the credits spent.
 - If budget limits are exceeded, explain the situation and suggest alternatives.
-- Use A2A tools (discover_agent, purchase_a2a) when the seller runs in A2A mode.
-- Use HTTP tools (discover_pricing, purchase_data) when the seller runs in HTTP mode.
 - You can purchase from different sellers by providing their URL."""
 
-TOOLS = [discover_pricing, check_balance, purchase_data, discover_agent, purchase_a2a]
+_A2A_PROMPT = """\
+You are a data buying agent. You help users discover and purchase data from \
+sellers using the A2A (Agent-to-Agent) protocol with Nevermined payments.
+
+Your workflow:
+1. **discover_agent** — Fetch the seller's agent card (/.well-known/agent.json) \
+to see skills and payment requirements.
+2. **check_balance** — Check your credit balance and budget.
+3. **purchase_a2a** — Send an A2A message with automatic payment.
+""" + _GUIDELINES
+
+_HTTP_PROMPT = """\
+You are a data buying agent. You help users discover and purchase data from \
+sellers using the x402 HTTP payment protocol.
+
+Your workflow:
+1. **discover_pricing** — Call this first to see what the seller offers.
+2. **check_balance** — Check your credit balance and budget before purchasing.
+3. **purchase_data** — Buy data by sending an x402-protected HTTP request.
+""" + _GUIDELINES
+
+_A2A_TOOLS = [discover_agent, check_balance, purchase_a2a]
+_HTTP_TOOLS = [discover_pricing, check_balance, purchase_data]
+
+SYSTEM_PROMPT = _A2A_PROMPT if A2A_MODE else _HTTP_PROMPT
+TOOLS = _A2A_TOOLS if A2A_MODE else _HTTP_TOOLS
 
 
 def create_agent(model) -> Agent:
