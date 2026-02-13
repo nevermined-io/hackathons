@@ -375,8 +375,9 @@ def main():
 
     # Payment lifecycle hooks for logging
     async def _before_request(method, params, request):
-        token = request.headers.get("payment-signature", "")[:16]
-        log(_logger, "PAYMENT", "VERIFY", f"method={method} token={token}...")
+        token = request.headers.get("payment-signature", "")
+        token_preview = f"{token[:16]}..." if len(token) > 16 else token or "(none)"
+        log(_logger, "PAYMENT", "VERIFY", f"method={method} token={token_preview}")
 
     async def _after_request(method, response, request):
         status = getattr(response, "status_code", "ok")

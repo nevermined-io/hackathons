@@ -76,9 +76,10 @@ def purchase_a2a_impl(
         events = asyncio.run(_collect_stream(client, params))
         result = _extract_from_events(events)
 
+        response_text = result.get("response", "")
         log(_logger, "A2A_CLIENT", "COMPLETED",
-            f'credits_used={result.get("credits_used", 0)} '
-            f'response={len(result.get("response", result.get("content", [{}])[0].get("text", "")))} chars')
+            f"credits_used={result.get('credits_used', 0)} "
+            f"response={len(response_text)} chars")
         return result
 
     except (ConnectionError, OSError):
@@ -145,7 +146,7 @@ def _extract_from_events(events: list) -> dict:
         state = status.state
         state_val = state.value if hasattr(state, "value") else str(state)
 
-        if state_val == "completed" or state_val == "failed":
+        if state_val in ("completed", "failed"):
             log(_logger, "A2A_CLIENT", "EVENT", f"state={state_val}")
 
         if state_val == "completed":

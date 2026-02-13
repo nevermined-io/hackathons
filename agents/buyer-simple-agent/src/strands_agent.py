@@ -187,8 +187,7 @@ def discover_agent(agent_url: str = "") -> dict:
         log(_logger, "TOOLS", "DISCOVER",
             f'found name={result.get("name", "?")} skills={len(result.get("skills", []))}')
 
-    # Also register in the seller registry if discovery succeeded
-    if result.get("status") == "success":
+        # Also register in the seller registry (best-effort)
         import httpx
         try:
             card_url = f"{url.rstrip('/')}/.well-known/agent.json"
@@ -197,7 +196,7 @@ def discover_agent(agent_url: str = "") -> dict:
             if resp.status_code == 200:
                 seller_registry.register(url, resp.json())
         except Exception:
-            pass  # registration is best-effort
+            pass
 
     return result
 
