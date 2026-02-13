@@ -15,14 +15,20 @@ Payment flow:
 
 Usage:
     poetry run agent-a2a
+    poetry run agent-a2a --tools search --port 9001
+    poetry run agent-a2a --tools summarize --port 9002 --buyer-url http://localhost:8000
 """
 
+import argparse
 import asyncio
 import datetime
 import os
 import sys
+import threading
+import time
 from uuid import uuid4
 
+import httpx
 from dotenv import load_dotenv
 from strands import Agent
 from strands.models.openai import OpenAIModel
@@ -43,7 +49,7 @@ from payments_py import Payments, PaymentOptions
 from payments_py.a2a.agent_card import build_payment_agent_card
 from payments_py.a2a.server import PaymentsA2AServer
 
-from .strands_agent_plain import CREDIT_MAP, create_plain_agent
+from .strands_agent_plain import ALL_TOOLS, create_plain_agent, resolve_tools
 
 load_dotenv()
 
@@ -51,7 +57,6 @@ NVM_API_KEY = os.environ["NVM_API_KEY"]
 NVM_ENVIRONMENT = os.getenv("NVM_ENVIRONMENT", "sandbox")
 NVM_PLAN_ID = os.environ["NVM_PLAN_ID"]
 NVM_AGENT_ID = os.getenv("NVM_AGENT_ID", "")
-A2A_PORT = int(os.getenv("A2A_PORT", "9000"))
 
 if not NVM_AGENT_ID:
     print("ERROR: NVM_AGENT_ID is required for A2A mode.")
@@ -61,58 +66,6 @@ if not NVM_AGENT_ID:
 
 payments = Payments.get_instance(
     PaymentOptions(nvm_api_key=NVM_API_KEY, environment=NVM_ENVIRONMENT)
-)
-
-
-# ---------------------------------------------------------------------------
-# Agent Card
-# ---------------------------------------------------------------------------
-
-BASE_AGENT_CARD = {
-    "name": "Data Selling Agent",
-    "description": (
-        "AI-powered data agent that provides web search, content summarization, "
-        "and market research services with tiered pricing."
-    ),
-    "url": f"http://localhost:{A2A_PORT}",
-    "version": "0.1.0",
-    "skills": [
-        AgentSkill(
-            id="search_data",
-            name="Web Search",
-            description="Search the web for data. Costs 1 credit per request.",
-            tags=["search", "data", "web"],
-        ).model_dump(),
-        AgentSkill(
-            id="summarize_data",
-            name="Content Summarization",
-            description="Summarize content with LLM-powered analysis. Costs 5 credits.",
-            tags=["summarize", "analysis", "llm"],
-        ).model_dump(),
-        AgentSkill(
-            id="research_data",
-            name="Market Research",
-            description="Full market research with multi-source report. Costs 10 credits.",
-            tags=["research", "market", "report"],
-        ).model_dump(),
-    ],
-    "capabilities": {
-        "streaming": True,
-        "pushNotifications": False,
-    },
-}
-
-AGENT_CARD = build_payment_agent_card(
-    BASE_AGENT_CARD,
-    {
-        "paymentType": "dynamic",
-        "credits": 1,  # minimum per request
-        "planId": NVM_PLAN_ID,
-        "agentId": NVM_AGENT_ID,
-        "costDescription": (
-            "Credits vary by tool: search_data=1, summarize_data=5, research_data=10"
-        ),
-    },
 )
 
 
@@ -175,8 +128,9 @@ class StrandsA2AExecutor(AgentExecutor):
     (which triggers PaymentsRequestHandler to settle).
     """
 
-    def __init__(self, agent: Agent):
+    def __init__(self, agent: Agent, credit_map: dict[str, int] | None = None):
         self._agent = agent
+        self._credit_map = credit_map or {}
 
     async def execute(self, context, event_queue: EventQueue) -> None:
         task_id = context.task_id or str(uuid4())
@@ -249,8 +203,7 @@ class StrandsA2AExecutor(AgentExecutor):
         parts = getattr(message, "parts", [])
         return _extract_text_from_parts(parts)
 
-    @staticmethod
-    def _calculate_credits(messages: list) -> int:
+    def _calculate_credits(self, messages: list) -> int:
         """Scan agent messages for tool_use to determine total credits."""
         total = 0
         for msg in messages:
@@ -258,39 +211,155 @@ class StrandsA2AExecutor(AgentExecutor):
                 continue
             for block in msg.get("content", []):
                 if isinstance(block, dict) and block.get("type") == "tool_use":
-                    total += CREDIT_MAP.get(block.get("name", ""), 1)
+                    total += self._credit_map.get(block.get("name", ""), 1)
         return total or 1  # minimum 1 credit per request
+
+
+# ---------------------------------------------------------------------------
+# Self-registration with buyer
+# ---------------------------------------------------------------------------
+
+def _register_with_buyer(buyer_url: str, agent_url: str):
+    """Send a registration A2A message to the buyer's registration server.
+
+    Runs in a daemon thread with a short delay so uvicorn has time to start.
+    Retries up to 3 times on connection errors.
+    """
+    time.sleep(2)  # wait for uvicorn to bind
+
+    payload = {
+        "jsonrpc": "2.0",
+        "id": str(uuid4()),
+        "method": "message/send",
+        "params": {
+            "message": {
+                "messageId": str(uuid4()),
+                "role": "user",
+                "parts": [{"kind": "text", "text": agent_url}],
+            }
+        },
+    }
+
+    for attempt in range(1, 4):
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.post(buyer_url, json=payload)
+            if resp.status_code == 200:
+                print(f"\nRegistered with buyer at {buyer_url}")
+                return
+            print(f"\nRegistration attempt {attempt}: HTTP {resp.status_code}")
+        except Exception as exc:
+            print(f"\nRegistration attempt {attempt} failed: {exc}")
+        time.sleep(2)
+
+    print("\nWARNING: Could not register with buyer after 3 attempts.")
 
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _parse_args():
+    parser = argparse.ArgumentParser(description="Data Selling Agent — A2A Mode")
+    parser.add_argument(
+        "--tools",
+        nargs="*",
+        choices=list(ALL_TOOLS.keys()),
+        default=None,
+        help="Tools to expose (default: all). Options: search, summarize, research",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("A2A_PORT", "9000")),
+        help="Port to listen on (default: A2A_PORT env or 9000)",
+    )
+    parser.add_argument(
+        "--buyer-url",
+        default=os.getenv("BUYER_URL", ""),
+        help="Buyer registration URL for auto-registration (default: BUYER_URL env)",
+    )
+    return parser.parse_args()
+
+
 def main():
     """Start the A2A server."""
+    args = _parse_args()
+    port = args.port
+    tool_names = args.tools
+    buyer_url = args.buyer_url
+
+    # Resolve tools, credit map, and skills
+    tools_list, credit_map, skills = resolve_tools(tool_names)
+
+    # Build cost description from credit map
+    cost_parts = [f"{name}={cost}" for name, cost in credit_map.items()]
+    cost_description = "Credits vary by tool: " + ", ".join(cost_parts)
+
+    # Build dynamic agent card
+    base_agent_card = {
+        "name": "Data Selling Agent",
+        "description": (
+            "AI-powered data agent that provides web search, content summarization, "
+            "and market research services with tiered pricing."
+        ),
+        "url": f"http://localhost:{port}",
+        "version": "0.1.0",
+        "skills": [s.model_dump() for s in skills],
+        "capabilities": {
+            "streaming": True,
+            "pushNotifications": False,
+        },
+    }
+
+    agent_card = build_payment_agent_card(
+        base_agent_card,
+        {
+            "paymentType": "dynamic",
+            "credits": min(credit_map.values()),
+            "planId": NVM_PLAN_ID,
+            "agentId": NVM_AGENT_ID,
+            "costDescription": cost_description,
+        },
+    )
+
+    # Create strands agent and executor
     model = OpenAIModel(
         client_args={"api_key": os.environ.get("OPENAI_API_KEY", "")},
         model_id=os.getenv("MODEL_ID", "gpt-4o-mini"),
     )
 
-    agent = create_plain_agent(model)
-    executor = StrandsA2AExecutor(agent)
+    agent = create_plain_agent(model, tool_names)
+    executor = StrandsA2AExecutor(agent, credit_map)
 
+    tool_label = ", ".join(tool_names) if tool_names else "all"
     print("=" * 60)
     print("Data Selling Agent — A2A Mode")
     print("=" * 60)
-    print(f"\nAgent card:  http://localhost:{A2A_PORT}/.well-known/agent.json")
-    print(f"JSON-RPC:    http://localhost:{A2A_PORT}/")
+    print(f"\nAgent card:  http://localhost:{port}/.well-known/agent.json")
+    print(f"JSON-RPC:    http://localhost:{port}/")
     print(f"Plan ID:     {NVM_PLAN_ID}")
     print(f"Agent ID:    {NVM_AGENT_ID}")
     print(f"Environment: {NVM_ENVIRONMENT}")
-    print(f"\nPricing: search=1cr, summarize=5cr, research=10cr")
+    print(f"Tools:       {tool_label}")
+    print(f"Pricing:     {cost_description}")
+
+    # Self-register with buyer if buyer URL provided
+    if buyer_url:
+        agent_url = f"http://localhost:{port}"
+        print(f"Registering: {buyer_url}")
+        thread = threading.Thread(
+            target=_register_with_buyer,
+            args=(buyer_url, agent_url),
+            daemon=True,
+        )
+        thread.start()
 
     result = PaymentsA2AServer.start(
-        agent_card=AGENT_CARD,
+        agent_card=agent_card,
         executor=executor,
         payments_service=payments,
-        port=A2A_PORT,
+        port=port,
     )
 
     asyncio.run(result.server.serve())
