@@ -24,7 +24,7 @@ Build AI agents that can buy, sell, and transact autonomously using Nevermined p
 cp .env.example .env
 
 # Edit with your credentials
-# NVM_API_KEY - Get from https://nevermined.app Settings > API Keys
+# NVM_API_KEY - Get from https://nevermined.app > API Keys > Global NVM API Keys
 # NVM_PLAN_ID - Create a plan in the Nevermined App
 # OPENAI_API_KEY - Your OpenAI API key
 ```

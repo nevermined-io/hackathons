@@ -10,11 +10,13 @@ This guide will help you set up your development environment and run your first 
 
 ## Step 1: Get Your Nevermined API Key
 
-1. Go to [https://nevermined.app/](https://nevermined.app/)
-2. Log in using Web3Auth (Google, email, or crypto wallet)
-3. Navigate to **Settings** > **API Keys**
-4. Click **Generate new key**
-5. Copy the key (starts with `nvm:`)
+1. Open [https://nevermined.app/](https://nevermined.app/) and sign in with your account
+2. Navigate to **API Keys** > **Global NVM API Keys**
+3. Click **+ New API Key**
+4. Give your key a descriptive name, select the permissions you need, and click **Generate API Key**
+5. Click **Copy Key** to copy it to your clipboard and store it securely
+
+> **Note:** API keys are environment-specific. Sandbox keys begin with `sandbox:` and live keys start with `live:`. Keep your API key secure — don't commit it to version control or share it publicly.
 
 ## Step 2: Create a Payment Plan
 
@@ -47,7 +49,7 @@ cp .env.example .env
 Your `.env` file should contain:
 
 ```bash
-NVM_API_KEY=nvm:your-api-key-here
+NVM_API_KEY=sandbox:your-api-key-here
 NVM_ENVIRONMENT=sandbox
 NVM_PLAN_ID=your-plan-id-here
 OPENAI_API_KEY=sk-your-openai-key
