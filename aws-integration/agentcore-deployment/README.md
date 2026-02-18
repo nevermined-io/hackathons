@@ -211,7 +211,7 @@ Store Nevermined credentials in AWS Secrets Manager:
 aws secretsmanager create-secret \
     --name hackathon/nevermined \
     --secret-string '{
-        "NVM_API_KEY": "nvm:your-api-key",
+        "NVM_API_KEY": "sandbox:your-api-key",
         "NVM_PLAN_ID": "your-plan-id",
         "NVM_ENVIRONMENT": "sandbox"
     }'

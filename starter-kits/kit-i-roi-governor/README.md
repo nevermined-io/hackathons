@@ -53,7 +53,7 @@ The ROI Governor:
 
 ```bash
 # Required
-NVM_API_KEY=nvm:your-api-key
+NVM_API_KEY=sandbox:your-api-key
 NVM_ENVIRONMENT=sandbox
 
 # Budget settings

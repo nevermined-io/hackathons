@@ -77,7 +77,7 @@ Add to `~/.config/claude/claude_desktop_config.json`:
 ```bash
 # .env file
 # Nevermined credentials (required)
-NVM_API_KEY=nvm:your-api-key
+NVM_API_KEY=sandbox:your-api-key
 NVM_ENVIRONMENT=sandbox          # or 'live', 'staging_sandbox'
 NVM_PLAN_ID=your-plan-id
 NVM_AGENT_ID=your-agent-id       # optional
@@ -93,10 +93,13 @@ AWS_SECRET_ACCESS_KEY=your-secret
 
 ### Get Your Nevermined API Key
 
-1. Go to [https://nevermined.app/](https://nevermined.app/)
-2. Log in (Web3Auth with Google, email, or crypto wallet)
-3. Navigate to Settings > API Keys
-4. Generate a new key and copy it
+1. Open [https://nevermined.app/](https://nevermined.app/) and sign in with your account
+2. Navigate to **API Keys** > **Global NVM API Keys**
+3. Click **+ New API Key**
+4. Give your key a descriptive name, select the permissions you need, and click **Generate API Key**
+5. Click **Copy Key** to copy it to your clipboard and store it securely
+
+> API keys are environment-specific: sandbox keys begin with `sandbox:`, live keys start with `live:`.
 
 ### Create a Payment Plan
 

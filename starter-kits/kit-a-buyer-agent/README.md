@@ -66,7 +66,7 @@ poetry run demo    # Run the demo
 
 ```bash
 # Required
-NVM_API_KEY=nvm:your-api-key
+NVM_API_KEY=sandbox:your-api-key
 NVM_ENVIRONMENT=sandbox
 OPENAI_API_KEY=sk-your-key
 

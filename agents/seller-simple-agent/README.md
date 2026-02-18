@@ -110,7 +110,7 @@ Requires AWS credentials and Bedrock model access configured in `.env`.
 
 ```bash
 # Required
-NVM_API_KEY=nvm:your-api-key
+NVM_API_KEY=sandbox:your-api-key
 NVM_ENVIRONMENT=sandbox
 NVM_PLAN_ID=your-plan-id
 OPENAI_API_KEY=sk-your-key
