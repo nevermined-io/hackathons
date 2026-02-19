@@ -7,12 +7,13 @@ package-mode = false
 [tool.poetry.dependencies]
 python = "^3.10"
 strands-agents = {version = ">=1.0.0", extras = ["openai"]}
-payments-py = {version = ">=1.2.0", extras = ["a2a"]}
+payments-py = {version = ">=1.2.1", extras = ["a2a"]}
 httpx = "^0.28.0"
 openai = "^1.40.0"
 python-dotenv = "^1.0.0"
 fastapi = "^0.120.0"
 uvicorn = ">=0.34.2,<1.0.0"
+sse-starlette = ">=2.0.0"
 
 [tool.poetry.extras]
 agentcore = ["bedrock-agentcore"]
@@ -23,6 +24,7 @@ agent-agentcore = "src.agent_agentcore:main"
 client = "src.client:main"
 demo = "src.demo:main"
 client-a2a = "src.client_a2a:main"
+web = "src.web:main"
 
 [build-system]
 requires = ["poetry-core"]

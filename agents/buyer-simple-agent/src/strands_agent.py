@@ -33,7 +33,6 @@ NVM_PLAN_ID = os.environ["NVM_PLAN_ID"]
 NVM_AGENT_ID = os.getenv("NVM_AGENT_ID")
 SELLER_URL = os.getenv("SELLER_URL", "http://localhost:3000")
 SELLER_A2A_URL = os.getenv("SELLER_A2A_URL", "")
-A2A_MODE = bool(SELLER_A2A_URL)
 
 MAX_DAILY_SPEND = int(os.getenv("MAX_DAILY_SPEND", "0"))
 MAX_PER_REQUEST = int(os.getenv("MAX_PER_REQUEST", "0"))
@@ -326,21 +325,28 @@ Your workflow:
 _A2A_TOOLS = [list_sellers, discover_agent, check_balance, purchase_a2a]
 _HTTP_TOOLS = [discover_pricing, check_balance, purchase_data]
 
-SYSTEM_PROMPT = _A2A_PROMPT if A2A_MODE else _HTTP_PROMPT
-TOOLS = _A2A_TOOLS if A2A_MODE else _HTTP_TOOLS
 
-
-def create_agent(model) -> Agent:
+def create_agent(model, mode: str = "a2a") -> Agent:
     """Create a Strands agent with the given model.
 
     Args:
         model: A Strands-compatible model (OpenAIModel, BedrockModel, etc.)
+        mode: Agent mode — "a2a" for A2A marketplace tools (default),
+              "http" for direct x402 HTTP tools.
 
     Returns:
         Configured Strands Agent with buyer tools.
     """
+    if mode == "a2a":
+        tools = _A2A_TOOLS
+        prompt = _A2A_PROMPT
+    elif mode == "http":
+        tools = _HTTP_TOOLS
+        prompt = _HTTP_PROMPT
+    else:
+        raise ValueError(f"Invalid mode {mode!r}, must be 'a2a' or 'http'")
     return Agent(
         model=model,
-        tools=TOOLS,
-        system_prompt=SYSTEM_PROMPT,
+        tools=tools,
+        system_prompt=prompt,
     )

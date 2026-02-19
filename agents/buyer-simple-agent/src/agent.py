@@ -4,13 +4,15 @@ Interactive CLI for the data buying agent.
 Read-eval-print loop: user types queries, the Strands agent orchestrates
 buyer tools (discover, check balance, purchase) autonomously.
 
-In A2A mode, also starts a registration server so sellers can announce
-themselves automatically.
+In A2A mode (the default), also starts a registration server so sellers
+can announce themselves automatically.
 
 Usage:
-    poetry run agent
+    poetry run python -m src.agent
+    poetry run python -m src.agent --mode http
 """
 
+import argparse
 import os
 import sys
 
@@ -20,7 +22,7 @@ load_dotenv()
 
 from strands.models.openai import OpenAIModel
 
-from .strands_agent import create_agent, NVM_PLAN_ID, SELLER_URL, A2A_MODE, seller_registry
+from .strands_agent import create_agent, NVM_PLAN_ID, SELLER_URL, seller_registry
 from .registration_server import start_registration_server
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -30,30 +32,54 @@ if not OPENAI_API_KEY:
     print("OPENAI_API_KEY is required. Set it in .env file.")
     sys.exit(1)
 
-model = OpenAIModel(
-    client_args={"api_key": OPENAI_API_KEY},
-    model_id=os.getenv("MODEL_ID", "gpt-4o-mini"),
-)
-agent = create_agent(model)
+
+def _parse_args():
+    parser = argparse.ArgumentParser(description="Data Buying Agent — Interactive CLI")
+    parser.add_argument(
+        "--mode",
+        choices=["a2a", "http"],
+        default="a2a",
+        help="Agent mode: 'a2a' for A2A marketplace (default), 'http' for direct x402",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=BUYER_PORT,
+        help=f"Port for the A2A registration server (default: {BUYER_PORT})",
+    )
+    return parser.parse_args()
 
 
 def main():
     """Run the interactive buyer agent CLI."""
+    args = _parse_args()
+    mode = args.mode
+    port = args.port
+
+    model = OpenAIModel(
+        client_args={"api_key": OPENAI_API_KEY},
+        model_id=os.getenv("MODEL_ID", "gpt-4o-mini"),
+    )
+    agent = create_agent(model, mode=mode)
+
     # Start registration server in A2A mode
-    if A2A_MODE:
-        start_registration_server(seller_registry, port=BUYER_PORT)
+    if mode == "a2a":
+        start_registration_server(seller_registry, port=port)
 
     print("=" * 60)
     print("Data Buying Agent — Interactive CLI")
     print("=" * 60)
-    print(f"Seller: {SELLER_URL}")
+    print(f"Mode: {mode}")
     print(f"Plan ID: {NVM_PLAN_ID}")
-    if A2A_MODE:
-        print(f"Registration: http://localhost:{BUYER_PORT} (A2A mode)")
-        print(f"Debug:        http://localhost:{BUYER_PORT}/sellers")
+    if mode == "a2a":
+        print(f"Registration: http://localhost:{port} (sellers register here)")
+        print(f"Debug:        http://localhost:{port}/sellers")
+    else:
+        print(f"Seller: {SELLER_URL}")
     print("\nType your queries (or 'quit' to exit):")
     print("Examples:")
-    print('  "What sellers are available?"')
+    if mode == "a2a":
+        print('  "What sellers are available?"')
     print('  "How many credits do I have?"')
     print('  "Search for the latest AI agent trends"')
     print()
