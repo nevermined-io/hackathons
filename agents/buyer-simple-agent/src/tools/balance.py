@@ -2,6 +2,11 @@
 
 from payments_py import Payments
 
+from ..log import get_logger, log
+
+
+_logger = get_logger("buyer.balance")
+
 
 def check_balance_impl(payments: Payments, plan_id: str) -> dict:
     """Check the credit balance for a given plan.
@@ -13,11 +18,14 @@ def check_balance_impl(payments: Payments, plan_id: str) -> dict:
     Returns:
         dict with status, content (for Strands), balance, and isSubscriber.
     """
+    log(_logger, "BALANCE", "CHECK", f"plan={plan_id[:12]}")
     try:
         result = payments.plans.get_plan_balance(plan_id)
 
         balance = result.balance
         is_subscriber = result.is_subscriber
+        log(_logger, "BALANCE", "RESULT",
+            f"balance={balance} subscriber={is_subscriber}")
 
         lines = [
             f"Plan ID: {plan_id}",
@@ -39,6 +47,7 @@ def check_balance_impl(payments: Payments, plan_id: str) -> dict:
         }
 
     except Exception as e:
+        log(_logger, "BALANCE", "ERROR", f"failed: {e}")
         return {
             "status": "error",
             "content": [{"text": f"Failed to check balance: {e}"}],
