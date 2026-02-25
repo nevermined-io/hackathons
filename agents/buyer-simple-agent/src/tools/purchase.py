@@ -7,6 +7,8 @@ import httpx
 
 from payments_py import Payments
 
+from .token_options import build_token_options
+
 
 def _decode_payment_required(header: str) -> str:
     """Decode the base64-encoded payment-required header into readable details."""
@@ -35,6 +37,8 @@ def purchase_data_impl(
 
     Generates an x402 access token, POSTs the query to {seller_url}/data
     with the payment-signature header, and handles the response.
+    The seller's verify/settle flow handles plan ordering on behalf of the
+    buyer if they are not yet subscribed.
 
     Args:
         payments: Initialized Payments SDK instance.
@@ -47,9 +51,12 @@ def purchase_data_impl(
         dict with status, content (for Strands), response data, and credits_used.
     """
     try:
+        token_options = build_token_options(payments, plan_id)
+
         token_result = payments.x402.get_x402_access_token(
             plan_id=plan_id,
             agent_id=agent_id,
+            token_options=token_options,
         )
         access_token = token_result.get("accessToken")
 
