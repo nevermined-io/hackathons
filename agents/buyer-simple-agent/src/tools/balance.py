@@ -35,8 +35,9 @@ def check_balance_impl(payments: Payments, plan_id: str) -> dict:
 
         if not is_subscriber:
             lines.append(
-                "\nYou are not subscribed to this plan. "
-                "Subscribe at https://nevermined.app to purchase credits."
+                "\nYou are not yet subscribed to this plan. "
+                "The x402 payment flow will handle subscription "
+                "automatically when you make a purchase."
             )
 
         return {

@@ -9,6 +9,7 @@ from payments_py import Payments
 from payments_py.a2a.payments_client import PaymentsClient
 
 from ..log import get_logger, log
+from .token_options import build_token_options
 
 
 def _error(message: str) -> dict:
@@ -55,11 +56,13 @@ def purchase_a2a_impl(
     log(_logger, "A2A_CLIENT", "CONNECT",
         f"url={agent_url} plan={plan_id[:12]} agent={agent_id[:12]}")
     try:
+        token_options = build_token_options(payments, plan_id)
         client = PaymentsClient(
             agent_base_url=agent_url,
             payments=payments,
             agent_id=agent_id,
             plan_id=plan_id,
+            delegation_config=token_options.delegation_config,
         )
 
         log(_logger, "A2A_CLIENT", "TOKEN", "generating x402 access token")
