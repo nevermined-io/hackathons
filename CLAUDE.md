@@ -283,8 +283,9 @@ hackathons/
 ├── agents/                      # Independent agent projects
 │   ├── strands-simple-agent/    # Strands + Nevermined x402 demo
 │   ├── seller-simple-agent/     # Data selling agent with tiered pricing
-│   └── buyer-simple-agent/      # Data buying agent with web frontend
-│       └── frontend/            # React + Vite chat UI
+│   ├── buyer-simple-agent/      # Data buying agent with web frontend
+│   │   └── frontend/            # React + Vite chat UI
+│   └── mcp-server-agent/        # MCP server with payment-protected tools
 ├── aws-integration/
 │   ├── strands-nevermined/      # Strands SDK + Nevermined
 │   └── agentcore-deployment/    # AgentCore deploy scripts
@@ -314,6 +315,13 @@ Each subfolder under `agents/` is an independent agent project with its own `pyp
   - Run client (A2A): `poetry run python -m src.client_a2a`
   - **Note:** Use `poetry run python -m src.<module>` (not `poetry run agent`) because `package-mode = false`
   - Demo scripts: `demo-scripts/demo-cli.md`, `demo-scripts/demo-frontend.md`
+- `mcp-server-agent/` - MCP server with Nevermined payment-protected tools (search, summarize, research)
+  - Install: `poetry install`
+  - Setup (registers agent + plan, only needs NVM_API_KEY): `poetry run python -m src.setup`
+  - Run server: `poetry run python -m src.server` (starts on port 3000)
+  - Run client: `poetry run python -m src.client`
+  - Health check: `curl http://localhost:3000/health`
+  - **Note:** Use `poetry run python -m src.<module>` because `package-mode = false`
 
 ---
 

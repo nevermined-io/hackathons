@@ -73,6 +73,7 @@ Complete working agents in the [`agents/`](./agents/) directory:
 | [strands-simple-agent](./agents/strands-simple-agent/) | Strands AI agent with x402 payment-protected tools and full payment discovery flow | Python, Strands SDK, Nevermined |
 | [seller-simple-agent](./agents/seller-simple-agent/) | Data selling agent with tiered pricing, FastAPI server, A2A mode, and AgentCore deployment | Python, Strands SDK, Nevermined |
 | [buyer-simple-agent](./agents/buyer-simple-agent/) | Data buying agent with x402 payment, A2A discovery, budget management, and spending tracking | Python, Strands SDK, Nevermined |
+| [mcp-server-agent](./agents/mcp-server-agent/) | MCP server with payment-protected tools, dynamic credit pricing, and programmatic agent registration | Python, PaymentsMCP, Nevermined |
 
 ## Protocol Overview
 
