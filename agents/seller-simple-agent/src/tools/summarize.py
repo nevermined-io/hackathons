@@ -5,7 +5,10 @@ import os
 from openai import OpenAI
 
 
-def summarize_content_impl(content: str, focus: str = "key_findings") -> dict:
+def summarize_content_impl(
+    content: str,
+    focus: str = "key_findings",
+) -> dict:
     """Summarize content using an LLM.
 
     Args:

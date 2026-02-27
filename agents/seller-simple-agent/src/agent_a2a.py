@@ -49,7 +49,10 @@ from payments_py import Payments, PaymentOptions
 from payments_py.a2a.agent_card import build_payment_agent_card
 from payments_py.a2a.server import PaymentsA2AServer
 
+from payments_py.a2a.payments_request_handler import PaymentsRequestHandler
+
 from .log import get_logger, log
+from .observability import create_observability_model
 from .strands_agent_plain import ALL_TOOLS, create_plain_agent, resolve_tools
 
 load_dotenv()
@@ -58,6 +61,7 @@ NVM_API_KEY = os.environ["NVM_API_KEY"]
 NVM_ENVIRONMENT = os.getenv("NVM_ENVIRONMENT", "sandbox")
 NVM_PLAN_ID = os.environ["NVM_PLAN_ID"]
 NVM_AGENT_ID = os.getenv("NVM_AGENT_ID", "")
+OBSERVABILITY_ENABLED = os.getenv("OBSERVABILITY_ENABLED", "false").lower() == "true"
 
 _logger = get_logger("seller")
 
@@ -86,10 +90,16 @@ def _make_status_event(
     state: TaskState,
     text: str,
     credits_used: int | None = None,
+    agent_request_id: str | None = None,
     final: bool = True,
 ) -> TaskStatusUpdateEvent:
     """Build a TaskStatusUpdateEvent with a text message."""
-    metadata = {"creditsUsed": credits_used} if credits_used is not None else None
+    metadata = {}
+    if credits_used is not None:
+        metadata["creditsUsed"] = credits_used
+    if agent_request_id:
+        metadata["agentRequestId"] = agent_request_id
+    metadata = metadata or None
     return TaskStatusUpdateEvent(
         task_id=task_id,
         context_id=context_id,
@@ -128,12 +138,28 @@ class StrandsA2AExecutor(AgentExecutor):
     Extracts the user's text from the A2A message, runs the Strands agent,
     and emits a final TaskStatusUpdateEvent with creditsUsed metadata
     (which triggers PaymentsRequestHandler to settle).
+
+    When observability is configured, creates a per-request agent whose
+    OpenAI calls are routed through Nevermined's observability proxy.
+
+    The ``handler`` reference is set after construction (once the handler
+    is created) so the executor can read ``agent_request`` from the HTTP
+    context stored by the custom handler during ``validate_request``.
     """
 
-    def __init__(self, agent: Agent, credit_map: dict[str, int] | None = None):
+    def __init__(
+        self,
+        agent: Agent,
+        credit_map: dict[str, int] | None = None,
+        payments_service: Payments | None = None,
+        tool_names: list[str] | None = None,
+    ):
         self._agent = agent
         self._credit_map = credit_map or {}
+        self._payments = payments_service
+        self._tool_names = tool_names
         self._log = get_logger("seller.executor")
+        self.handler: PaymentsRequestHandler | None = None
 
     async def execute(self, context, event_queue: EventQueue) -> None:
         task_id = context.task_id or str(uuid4())
@@ -165,11 +191,33 @@ class StrandsA2AExecutor(AgentExecutor):
         log(self._log, "EXECUTOR", "RECEIVED",
             f'query="{user_text[:80]}" task={task_id[:8]}')
 
+        # Get agent_request from the handler (set during validate_request, single verify call)
+        agent_request = getattr(self.handler, "latest_agent_request", None) if self.handler else None
+        agent_request_id = getattr(self.handler, "latest_agent_request_id", None) if self.handler else None
+        agent = self._agent
+        invocation_state = {}
+
+        if OBSERVABILITY_ENABLED and agent_request and self._payments:
+            # Create a per-request agent whose model routes through the
+            # Nevermined observability proxy (Helicone). This logs the
+            # agent's LLM calls to the dashboard under this agentRequestId.
+            api_key = os.environ.get("OPENAI_API_KEY", "")
+            model_id = os.environ.get("MODEL_ID", "gpt-4o-mini")
+            obs_model = create_observability_model(
+                self._payments, agent_request, api_key, model_id,
+            )
+            if obs_model:
+                agent = create_plain_agent(obs_model, self._tool_names)
+                log(self._log, "OBSERVABILITY", "ENABLED",
+                    f"request_id={agent_request_id}")
+
         # Run the Strands agent
         # Snapshot message count so we only count credits from this request
-        msg_offset = len(self._agent.messages)
+        msg_offset = len(agent.messages)
         try:
-            result = await asyncio.to_thread(self._agent, user_text)
+            result = await asyncio.to_thread(
+                agent, user_text, invocation_state=invocation_state,
+            )
             response_text = str(result)
         except Exception as exc:
             log(self._log, "EXECUTOR", "FAILED", str(exc))
@@ -177,11 +225,12 @@ class StrandsA2AExecutor(AgentExecutor):
                 _make_status_event(
                     task_id, context_id, TaskState.failed,
                     f"Error: {exc}", credits_used=0,
+                    agent_request_id=agent_request_id,
                 )
             )
             return
 
-        credits_used = self._calculate_credits(self._agent.messages[msg_offset:])
+        credits_used = self._calculate_credits(agent.messages[msg_offset:])
         log(self._log, "EXECUTOR", "COMPLETED",
             f"credits_used={credits_used} response={len(response_text)} chars")
 
@@ -189,6 +238,7 @@ class StrandsA2AExecutor(AgentExecutor):
             _make_status_event(
                 task_id, context_id, TaskState.completed,
                 response_text, credits_used=credits_used,
+                agent_request_id=agent_request_id,
             )
         )
 
@@ -350,7 +400,11 @@ def main():
     )
 
     agent = create_plain_agent(model, tool_names)
-    executor = StrandsA2AExecutor(agent, credit_map)
+    executor = StrandsA2AExecutor(
+        agent, credit_map,
+        payments_service=payments,
+        tool_names=tool_names,
+    )
 
     tool_label = ", ".join(tool_names) if tool_names else "all"
     log(_logger, "SERVER", "STARTUP",
@@ -361,6 +415,8 @@ def main():
         f"plan={NVM_PLAN_ID} agent={NVM_AGENT_ID} env={NVM_ENVIRONMENT}")
     log(_logger, "SERVER", "STARTUP",
         f"tools=[{tool_label}] pricing={cost_description}")
+    obs_label = "enabled" if OBSERVABILITY_ENABLED else "disabled"
+    log(_logger, "SERVER", "STARTUP", f"observability={obs_label}")
 
     # Self-register with buyer if buyer URL provided
     if buyer_url:
@@ -392,12 +448,23 @@ def main():
         "onError": _on_error,
     }
 
+    from a2a.server.tasks.inmemory_task_store import InMemoryTaskStore
+
+    handler = PaymentsRequestHandler(
+        agent_card=agent_card,
+        task_store=InMemoryTaskStore(),
+        agent_executor=executor,
+        payments_service=payments,
+    )
+    executor.handler = handler
+
     result = PaymentsA2AServer.start(
         agent_card=agent_card,
         executor=executor,
         payments_service=payments,
         port=port,
         hooks=hooks,
+        custom_request_handler=handler,
     )
 
     asyncio.run(result.server.serve())
