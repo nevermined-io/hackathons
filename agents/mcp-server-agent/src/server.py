@@ -12,10 +12,12 @@ Credit pricing:
 import asyncio
 import os
 import signal
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
+from openai import OpenAI
 from payments_py import Payments, PaymentOptions
+from payments_py.common.types import StartAgentRequest
 from payments_py.mcp import PaymentsMCP
 
 from .tools.market_research import research_market_impl
@@ -27,6 +29,7 @@ load_dotenv()
 NVM_API_KEY = os.environ.get("NVM_API_KEY", "")
 NVM_ENVIRONMENT = os.environ.get("NVM_ENVIRONMENT", "staging")
 NVM_AGENT_ID = os.environ.get("NVM_AGENT_ID", "")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 PORT = int(os.environ.get("PORT", "3000"))
 
 payments = Payments.get_instance(
@@ -40,6 +43,43 @@ mcp = PaymentsMCP(
     version="1.0.0",
     description="Data tools MCP server with Nevermined payments",
 )
+
+
+# --- Observability ---
+#
+# Build a per-request OpenAI client that routes LLM calls through Nevermined's
+# observability proxy (Helicone). Uses the real agent_request from the paywall
+# context so every inference is tagged with the actual subscriber, plan, and
+# request metadata.
+
+
+def _get_openai_client(paywall_context: Optional[Dict[str, Any]] = None) -> OpenAI:
+    """Return an OpenAI client, with Helicone observability if agent_request is available."""
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY not set")
+
+    agent_req_data = (paywall_context or {}).get("agent_request")
+    if agent_req_data is not None:
+        try:
+            start_req = StartAgentRequest(**agent_req_data)
+            oai_config = payments.observability.with_openai(
+                api_key=OPENAI_API_KEY,
+                start_agent_request=start_req,
+                custom_properties={"server": "mcp-server-agent", "environment": NVM_ENVIRONMENT},
+            )
+            print(f"[Observability] Proxying through {oai_config.base_url} "
+                  f"(subscriber={start_req.balance.holder_address[:10]}..., "
+                  f"request={start_req.agent_request_id})")
+            return OpenAI(
+                api_key=oai_config.api_key,
+                base_url=oai_config.base_url,
+                default_headers=oai_config.default_headers,
+            )
+        except Exception as e:
+            print(f"[Observability] Setup failed ({e}), using direct OpenAI")
+
+    print("[Observability] No agent_request in context, using direct OpenAI")
+    return OpenAI(api_key=OPENAI_API_KEY)
 
 
 # --- Dynamic credit functions ---
@@ -93,24 +133,26 @@ def search_data(query: str) -> str:
 
 
 @mcp.tool(credits=_summarize_credits)
-def summarize_data(content: str, focus: str = "key_findings") -> str:
+def summarize_data(content: str, focus: str = "key_findings", paywall_context=None) -> str:
     """Summarize content using AI (2-10 credits based on output length).
 
     :param content: The text content to summarize
     :param focus: Focus area - key_findings, action_items, trends, or risks
     """
-    result = summarize_content_impl(content, focus)
+    client = _get_openai_client(paywall_context)
+    result = summarize_content_impl(content, focus, openai_client=client)
     return result["content"][0]["text"]
 
 
 @mcp.tool(credits=_research_credits)
-def research_data(query: str, depth: str = "standard") -> str:
+def research_data(query: str, depth: str = "standard", paywall_context=None) -> str:
     """Conduct market research combining search, analysis, and AI synthesis (5-20 credits based on depth and output).
 
     :param query: The research topic or question
     :param depth: Research depth - standard (5+ credits) or deep (10+ credits)
     """
-    result = research_market_impl(query, depth)
+    client = _get_openai_client(paywall_context)
+    result = research_market_impl(query, depth, openai_client=client)
     return result["content"][0]["text"]
 
 
