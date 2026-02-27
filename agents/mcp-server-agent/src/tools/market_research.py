@@ -22,12 +22,15 @@ def _fetch_url_content(url: str, max_chars: int = 2000) -> str:
         return ""
 
 
-def research_market_impl(query: str, depth: str = "standard") -> dict:
+def research_market_impl(
+    query: str, depth: str = "standard", openai_client: "OpenAI | None" = None
+) -> dict:
     """Conduct market research by combining search, content fetching, and summarization.
 
     Args:
         query: The research topic or question.
         depth: Research depth - 'standard' (search + summarize) or 'deep' (+ URL fetching).
+        openai_client: Optional pre-configured OpenAI client (e.g. with observability).
 
     Returns:
         dict with status, content (for Strands), report, and sources.
@@ -67,7 +70,7 @@ def research_market_impl(query: str, depth: str = "standard") -> dict:
         combined_content = "\n\n".join(content_pieces)
 
         # Step 3: Synthesize with LLM
-        client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+        client = openai_client or OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
         model_id = os.environ.get("MODEL_ID", "gpt-4o-mini")
 
         completion = client.chat.completions.create(

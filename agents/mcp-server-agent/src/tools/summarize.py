@@ -5,12 +5,15 @@ import os
 from openai import OpenAI
 
 
-def summarize_content_impl(content: str, focus: str = "key_findings") -> dict:
+def summarize_content_impl(
+    content: str, focus: str = "key_findings", openai_client: "OpenAI | None" = None
+) -> dict:
     """Summarize content using an LLM.
 
     Args:
         content: The text content to summarize.
         focus: Focus area - 'key_findings', 'action_items', 'trends', or 'risks'.
+        openai_client: Optional pre-configured OpenAI client (e.g. with observability).
 
     Returns:
         dict with status, content (for Strands), summary, and key_points.
@@ -25,7 +28,7 @@ def summarize_content_impl(content: str, focus: str = "key_findings") -> dict:
     focus_instruction = focus_prompts.get(focus, focus_prompts["key_findings"])
 
     try:
-        client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+        client = openai_client or OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
         model_id = os.environ.get("MODEL_ID", "gpt-4o-mini")
 
         completion = client.chat.completions.create(
