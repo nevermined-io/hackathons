@@ -22,12 +22,15 @@ def _fetch_url_content(url: str, max_chars: int = 2000) -> str:
         return ""
 
 
-def research_market_impl(query: str, depth: str = "standard") -> dict:
+def research_market_impl(
+    query: str,
+    depth: str = "standard",
+) -> dict:
     """Conduct market research by combining search, content fetching, and summarization.
 
     Args:
         query: The research topic or question.
-        depth: Research depth - 'standard' (search + summarize) or 'deep' (+ URL fetching).
+        depth: Research depth - 'standard' or 'deep'.
 
     Returns:
         dict with status, content (for Strands), report, and sources.
