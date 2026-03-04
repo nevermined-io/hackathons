@@ -6,6 +6,50 @@ This guide walks you through deploying Nevermined payment-enabled agents to AWS 
 
 ---
 
+## Quick Deploy
+
+Deploy both agents with a single command:
+
+```bash
+# Set your credentials
+export NVM_API_KEY=sandbox:...
+export NVM_PLAN_ID=...
+export NVM_AGENT_ID=...
+export OPENAI_API_KEY=sk-...
+
+# Optional (defaults shown)
+export AWS_REGION=us-west-2
+export NVM_ENVIRONMENT=sandbox
+
+# Deploy seller + buyer to AgentCore
+./scripts/deploy-agentcore.sh
+```
+
+The script will:
+1. Check prerequisites (AWS CLI, AgentCore toolkit, Docker)
+2. Create `.bedrock_agentcore.yaml` from the example templates (filling in your AWS account and region)
+3. Deploy the seller agent and capture its ARN
+4. Deploy the buyer agent with the seller ARN injected
+5. Print both ARNs and next steps
+
+To redeploy only the buyer (e.g., after updating code):
+
+```bash
+export SKIP_SELLER=1
+export SELLER_AGENT_ARN=arn:aws:bedrock-agentcore:us-west-2:ACCOUNT:runtime/seller_agent-XXX
+./scripts/deploy-agentcore.sh
+```
+
+Test the deployment:
+
+```bash
+./scripts/test-agentcore.sh
+```
+
+For the full manual walkthrough, continue reading below.
+
+---
+
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
