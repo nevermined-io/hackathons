@@ -2,10 +2,11 @@
 # Deploy seller and buyer agents to AWS Bedrock AgentCore with Nevermined payments.
 #
 # Usage:
-#   export NVM_API_KEY=sandbox:...
+#   export SELLER_NVM_API_KEY=sandbox:...   # Seller's API key (builder/publisher)
+#   export BUYER_NVM_API_KEY=sandbox:...    # Buyer's API key (subscriber)
+#   export NVM_PLAN_ID=...                  # Seller's payment plan ID
+#   export NVM_AGENT_ID=...                 # Seller's agent ID
 #   export OPENAI_API_KEY=sk-...
-#   export NVM_PLAN_ID=...
-#   export NVM_AGENT_ID=...
 #   ./scripts/deploy-agentcore.sh
 #
 # Optional env vars:
@@ -88,24 +89,20 @@ check_env_vars() {
 
     local missing=0
 
-    for var in NVM_API_KEY NVM_PLAN_ID OPENAI_API_KEY; do
+    for var in SELLER_NVM_API_KEY BUYER_NVM_API_KEY NVM_PLAN_ID NVM_AGENT_ID OPENAI_API_KEY; do
         if [[ -z "${!var:-}" ]]; then
             err "Required env var $var is not set"
             missing=1
         fi
     done
 
-    # NVM_AGENT_ID is required for A2A mode
-    if [[ -z "${NVM_AGENT_ID:-}" ]]; then
-        warn "NVM_AGENT_ID is not set. It's required for A2A mode."
-    fi
-
     if [[ $missing -ne 0 ]]; then
         err "Set the missing variables and try again."
         echo ""
-        echo "  export NVM_API_KEY=sandbox:..."
-        echo "  export NVM_PLAN_ID=..."
-        echo "  export NVM_AGENT_ID=..."
+        echo "  export SELLER_NVM_API_KEY=sandbox:...  # Seller's key (builder/publisher)"
+        echo "  export BUYER_NVM_API_KEY=sandbox:...   # Buyer's key (subscriber)"
+        echo "  export NVM_PLAN_ID=...                 # Seller's payment plan ID"
+        echo "  export NVM_AGENT_ID=...                # Seller's agent ID"
         echo "  export OPENAI_API_KEY=sk-..."
         exit 1
     fi
@@ -150,11 +147,14 @@ setup_yaml() {
 deploy_agent() {
     local agent_dir="$1"
     local agent_name="$2"
+    shift 2
+    # Remaining args are --env KEY=VALUE pairs
+    local env_args=("$@")
 
     info "$agent_name: Starting deployment..."
     cd "$agent_dir"
 
-    agentcore deploy
+    agentcore deploy --auto-update-on-conflict "${env_args[@]}"
 
     ok "$agent_name: Deployed"
     cd "$REPO_ROOT"
@@ -190,29 +190,6 @@ get_agent_arn() {
     fi
 }
 
-# --- Create .env for agent container ---
-create_agent_env() {
-    local agent_dir="$1"
-    local agent_name="$2"
-    local extra_vars="${3:-}"
-
-    local env_file="$agent_dir/.env"
-
-    info "$agent_name: Writing .env for container"
-    cat > "$env_file" <<EOF
-NVM_API_KEY=${NVM_API_KEY}
-NVM_ENVIRONMENT=${NVM_ENVIRONMENT}
-NVM_PLAN_ID=${NVM_PLAN_ID}
-NVM_AGENT_ID=${NVM_AGENT_ID:-}
-OPENAI_API_KEY=${OPENAI_API_KEY}
-EOF
-
-    if [[ -n "$extra_vars" ]]; then
-        echo "$extra_vars" >> "$env_file"
-    fi
-
-    ok "$agent_name: .env created"
-}
 
 # ===========================================================================
 # Main
@@ -243,8 +220,12 @@ if [[ "${SKIP_SELLER:-}" == "1" ]]; then
 else
     info "=== Deploying Seller Agent ==="
     setup_yaml "$SELLER_DIR" "seller_agent"
-    create_agent_env "$SELLER_DIR" "seller_agent"
-    deploy_agent "$SELLER_DIR" "seller_agent"
+    deploy_agent "$SELLER_DIR" "seller_agent" \
+        --env "NVM_API_KEY=$SELLER_NVM_API_KEY" \
+        --env "NVM_ENVIRONMENT=$NVM_ENVIRONMENT" \
+        --env "NVM_PLAN_ID=$NVM_PLAN_ID" \
+        --env "NVM_AGENT_ID=$NVM_AGENT_ID" \
+        --env "OPENAI_API_KEY=$OPENAI_API_KEY"
 
     SELLER_AGENT_ARN="$(get_agent_arn "$SELLER_DIR" "seller_agent")"
 fi
@@ -255,8 +236,13 @@ echo ""
 # --- Deploy Buyer ---
 info "=== Deploying Buyer Agent ==="
 setup_yaml "$BUYER_DIR" "buyer_agent"
-create_agent_env "$BUYER_DIR" "buyer_agent" "SELLER_AGENT_ARN=$SELLER_AGENT_ARN"
-deploy_agent "$BUYER_DIR" "buyer_agent"
+deploy_agent "$BUYER_DIR" "buyer_agent" \
+    --env "NVM_API_KEY=$BUYER_NVM_API_KEY" \
+    --env "NVM_ENVIRONMENT=$NVM_ENVIRONMENT" \
+    --env "NVM_PLAN_ID=$NVM_PLAN_ID" \
+    --env "NVM_AGENT_ID=$NVM_AGENT_ID" \
+    --env "OPENAI_API_KEY=$OPENAI_API_KEY" \
+    --env "SELLER_AGENT_ARN=$SELLER_AGENT_ARN"
 
 BUYER_AGENT_ARN="$(get_agent_arn "$BUYER_DIR" "buyer_agent")"
 ok "Buyer ARN: $BUYER_AGENT_ARN"

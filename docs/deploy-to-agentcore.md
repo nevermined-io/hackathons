@@ -12,9 +12,10 @@ Deploy both agents with a single command:
 
 ```bash
 # Set your credentials
-export NVM_API_KEY=sandbox:...
-export NVM_PLAN_ID=...
-export NVM_AGENT_ID=...
+export SELLER_NVM_API_KEY=sandbox:...   # Seller's key (builder/publisher)
+export BUYER_NVM_API_KEY=sandbox:...    # Buyer's key (subscriber)
+export NVM_PLAN_ID=...                  # Seller's payment plan ID
+export NVM_AGENT_ID=...                 # Seller's agent ID
 export OPENAI_API_KEY=sk-...
 
 # Optional (defaults shown)

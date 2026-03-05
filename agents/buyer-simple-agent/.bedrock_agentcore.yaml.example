@@ -22,13 +22,13 @@ agents:
     source_path: .
     aws:
       execution_role: null           # Created by `agentcore init` or set manually
-      execution_role_auto_create: false
+      execution_role_auto_create: true
       account: 'YOUR_AWS_ACCOUNT_ID' # e.g. '123456789012'
       region: YOUR_REGION            # e.g. us-west-2
       ecr_repository: null           # Created by `agentcore deploy`
-      ecr_auto_create: false
+      ecr_auto_create: true
       s3_path: null
-      s3_auto_create: false
+      s3_auto_create: true
       network_configuration:
         network_mode: PUBLIC
         network_mode_config: null

@@ -81,7 +81,7 @@ check_status() {
 
     info "Checking $name status..."
     cd "$dir"
-    agentcore status "$name" 2>&1 | head -20 || warn "Could not get status for $name"
+    agentcore status 2>&1 | head -20 || warn "Could not get status for $name"
     cd "$REPO_ROOT"
     echo ""
 }
@@ -92,7 +92,7 @@ invoke_buyer() {
     echo ""
 
     local output_file
-    output_file="$(mktemp /tmp/agentcore-test-XXXXXX.json)"
+    output_file="/tmp/agentcore-test-$$.json"
 
     aws bedrock-agentcore invoke-agent-runtime \
         --agent-runtime-arn "$BUYER_AGENT_ARN" \
