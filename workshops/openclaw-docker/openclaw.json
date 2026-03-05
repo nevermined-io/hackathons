@@ -1,0 +1,29 @@
+{
+  "gateway": {
+    "mode": "local",
+    "auth": {
+      "mode": "token",
+      "token": "demo"
+    },
+    "trustedProxies": ["0.0.0.0/0"],
+    "controlUi": {
+      "allowedOrigins": ["http://localhost:18789", "http://localhost:18790"],
+      "allowInsecureAuth": true
+    }
+  },
+  "plugins": {
+    "entries": {
+      "openclaw-plugin": {
+        "enabled": true,
+        "config": {
+          "environment": "sandbox",
+          "nvmApiKey": "__NVM_API_KEY__",
+          "planId": "__NVM_PLAN_ID__",
+          "enablePaidEndpoint": true,
+          "agentEndpointPath": "/nevermined/agent",
+          "creditsPerRequest": 1
+        }
+      }
+    }
+  }
+}

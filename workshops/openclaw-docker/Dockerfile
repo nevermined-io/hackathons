@@ -17,21 +17,19 @@ ENV PATH="/root/.local/bin:/root/.openclaw/bin:${PATH}"
 # Update to latest version
 RUN openclaw update --yes 2>/dev/null || true
 
-# Install Nevermined plugin from local tarball and its peer dependency
-COPY nevermined-plugin.tgz /tmp/nevermined-plugin.tgz
-RUN mkdir -p /root/.openclaw/extensions/openclaw-plugin && \
-    tar xzf /tmp/nevermined-plugin.tgz -C /root/.openclaw/extensions/openclaw-plugin --strip-components=1 && \
-    cd /root/.openclaw/extensions/openclaw-plugin && npm install @nevermined-io/payments && \
-    rm /tmp/nevermined-plugin.tgz
+# Install Nevermined plugin from npm registry and its dependencies
+RUN openclaw plugins install @nevermined-io/openclaw-plugin && \
+    cd /root/.openclaw/extensions/openclaw-plugin && npm install
 
 # Create config directory
 RUN mkdir -p /root/.openclaw
 
-# Copy config, workspace files, and entrypoint
-COPY openclaw.json /opt/openclaw/openclaw.json
+# Copy config, workspace files, and entrypoints
+COPY openclaw.json openclaw-buyer.json /opt/openclaw/
 COPY TOOLS.md /opt/openclaw/TOOLS.md
-COPY entrypoint.sh /opt/openclaw/entrypoint.sh
-RUN chmod +x /opt/openclaw/entrypoint.sh
+COPY patch-handler.js /opt/openclaw/patch-handler.js
+COPY entrypoint.sh entrypoint-buyer.sh /opt/openclaw/
+RUN chmod +x /opt/openclaw/entrypoint.sh /opt/openclaw/entrypoint-buyer.sh
 
 WORKDIR /root
 

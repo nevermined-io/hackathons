@@ -16,10 +16,7 @@
       "openclaw-plugin": {
         "enabled": true,
         "config": {
-          "environment": "sandbox",
-          "enablePaidEndpoint": true,
-          "agentEndpointPath": "/nevermined/agent",
-          "creditsPerRequest": 1
+          "environment": "sandbox"
         }
       }
     }

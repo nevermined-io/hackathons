@@ -13,6 +13,8 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - NVM_SELLER_API_KEY=${NVM_SELLER_API_KEY:-}
+      - NVM_PLAN_ID=${NVM_PLAN_ID:-}
     volumes:
       - seller-config:/root/.openclaw
     restart: unless-stopped
@@ -20,6 +22,7 @@ services:
   buyer:
     build: .
     container_name: nvm-buyer
+    entrypoint: ["/opt/openclaw/entrypoint-buyer.sh"]
     stdin_open: true
     tty: true
     ports:
